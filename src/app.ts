@@ -19,6 +19,9 @@ import driversRouter from "./modules/drivers/drivers.routes.js";
 import vehiclesRouter from "./modules/vehicles/vehicles.routes.js";
 import assignmentRouter from "./modules/dispatch/assignment.routes.js";
 import dispatchRouter from "./modules/dispatch/dispatch.routes.js";
+import deliveryRouter from "./modules/delivery/delivery.routes.js";
+import proofRouter from "./modules/delivery/proof.routes.js";
+import filesRouter from "./modules/files/files.routes.js";
 
 export function createApp(): express.Express {
   const app = express();
@@ -49,6 +52,9 @@ export function createApp(): express.Express {
   app.use("/api/v1/vehicles", vehiclesRouter);
   app.use("/api/v1", assignmentRouter);
   app.use("/api/v1/dispatch", dispatchRouter);
+  app.use("/api/v1", deliveryRouter);
+  app.use("/api/v1", proofRouter);
+  app.use("/api/v1/files", filesRouter);
   app.use("/api/v1", (_req, res) => {
     res.status(404).json({
       type: "about:blank",
