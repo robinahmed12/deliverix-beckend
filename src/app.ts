@@ -22,6 +22,7 @@ import dispatchRouter from "./modules/dispatch/dispatch.routes.js";
 import deliveryRouter from "./modules/delivery/delivery.routes.js";
 import proofRouter from "./modules/delivery/proof.routes.js";
 import filesRouter from "./modules/files/files.routes.js";
+import notificationsRouter from "./modules/notifications/notifications.routes.js";
 
 export function createApp(): express.Express {
   const app = express();
@@ -55,6 +56,7 @@ export function createApp(): express.Express {
   app.use("/api/v1", deliveryRouter);
   app.use("/api/v1", proofRouter);
   app.use("/api/v1/files", filesRouter);
+  app.use("/api/v1/notifications", notificationsRouter);
   app.use("/api/v1", (_req, res) => {
     res.status(404).json({
       type: "about:blank",
