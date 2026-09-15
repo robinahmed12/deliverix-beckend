@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: deliverix-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: deliverix
+      POSTGRES_PASSWORD: deliverix
+      POSTGRES_DB: deliverix
+    ports:
+      - "5432:5432"
+    volumes:
+      - deliverix-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deliverix -d deliverix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: deliverix-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://deliverix:deliverix@db:5432/deliverix?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set in .env}
+    ports:
+      - "3000:3000"
+
+volumes:
+  deliverix-pg:

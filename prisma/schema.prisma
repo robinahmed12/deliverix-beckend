@@ -1,0 +1,891 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderStatus {
+  Pending
+  ReadyForPickup
+  Assigned
+  PickedUp
+  InTransit
+  OutForDelivery
+  Failed
+  ReturnInProgress
+  Delivered
+  Cancelled
+  Returned
+}
+
+enum AssignmentStatus {
+  Offered
+  Accepted
+  Rejected
+  Expired
+  Withdrawn
+  Released
+  Completed
+}
+
+enum DriverAvailabilityState {
+  Offline
+  Available
+  Assigned
+  OnDelivery
+  Unavailable
+}
+
+enum UserAccountStatus {
+  Invited
+  Active
+  Inactive
+  Suspended
+}
+
+enum VehicleOperationalStatus {
+  Active
+  Maintenance
+  Inactive
+}
+
+enum FileStatus {
+  Uploaded
+  Scanning
+  Accepted
+  Rejected
+  FailedProcessing
+}
+
+enum ProofEvidenceType {
+  RecipientName
+  Photo
+  Signature
+  ConfirmationFlag
+  Otp
+}
+
+enum ProofStatus {
+  Pending
+  Accepted
+  Rejected
+}
+
+enum NotificationChannel {
+  InApp
+  Email
+}
+
+enum NotificationStatus {
+  Pending
+  Sent
+  Failed
+  DeadLettered
+}
+
+enum NotificationDeliveryStatus {
+  Pending
+  Sent
+  Failed
+  DeadLettered
+}
+
+enum OutboxStatus {
+  Pending
+  Processing
+  Delivered
+  Failed
+  DeadLettered
+}
+
+enum CustodyKind {
+  Driver
+  Facility
+}
+
+enum AttemptStatus {
+  InProgress
+  Delivered
+  Failed
+}
+
+enum ReturnStatus {
+  InProgress
+  Returned
+}
+
+enum IdempotencyStatus {
+  InProgress
+  Completed
+  Conflict
+}
+
+enum OtpPurpose {
+  ProofOfDelivery
+  ReturnReceipt
+}
+
+model User {
+  id                   String             @id @default(cuid())
+  email                String             @unique
+  passwordHash         String
+  name                 String
+  phone                String?
+  status               UserAccountStatus  @default(Invited)
+  invitationTokenHash  String?            @unique
+  invitationExpiresAt  DateTime?
+  mfaEnabled           Boolean            @default(false)
+  mfaSecretCipher      String?
+  lastLoginAt          DateTime?
+  version              Int                @default(1)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  roles               UserRole[]
+  sessions            Session[]
+  refreshCredentials  RefreshCredential[]
+  customer            Customer?
+  driver              Driver?
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  createdAtOrders     DeliveryOrder[]     @relation("OrderCreatedBy")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  userId        String
+  tokenFamilyId String
+  ip            String?
+  userAgent     String?
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenFamilyId])
+  @@map("sessions")
+}
+
+model RefreshCredential {
+  id         String    @id @default(cuid())
+  userId     String
+  familyId   String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  reusedAt   DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([revokedAt])
+  @@map("refresh_credentials")
+}
+
+model Customer {
+  id             String   @id @default(cuid())
+  name           String
+  email          String?
+  emailNormalized String? @unique
+  phone          String?
+  phoneNormalized String? @unique
+  accountId      String?  @unique
+  status         String   @default("active")
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  account   User?              @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  addresses CustomerAddress[]
+  orders    DeliveryOrder[]
+
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id         String   @id @default(cuid())
+  customerId String
+  label      String?
+  line1      String
+  line2      String?
+  city       String
+  region     String?
+  postalCode String?
+  country    String
+  latitude   Decimal? @db.Decimal(9, 6)
+  longitude  Decimal? @db.Decimal(9, 6)
+  isDefault  Boolean  @default(false)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+model Driver {
+  id            String   @id @default(cuid())
+  driverCode    String   @unique
+  accountId     String   @unique
+  contactPhone  String
+  licenseNumber String?
+  licenseExpiry DateTime?
+  qualification String?
+  active        Boolean  @default(true)
+  state         DriverAvailabilityState @default(Offline)
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  account              User                   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  availabilityHistory  DriverAvailabilityHistory[]
+  assignments          DeliveryAssignment[]
+  vehicleAllocations   DriverVehicleAssignment[]
+  zones                DriverZone[]
+  locations            DriverLocation[]
+
+  @@index([active])
+  @@index([state])
+  @@map("drivers")
+}
+
+model DriverAvailabilityHistory {
+  id           String   @id @default(cuid())
+  driverId     String
+  previousState DriverAvailabilityState
+  newState     DriverAvailabilityState
+  reasonCode   String?
+  actorId      String?
+  changedAt    DateTime @default(now())
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, changedAt])
+  @@map("driver_availability_history")
+}
+
+model Vehicle {
+  id                 String   @id @default(cuid())
+  registrationNumber String   @unique
+  make               String?
+  model              String?
+  vehicleType        String
+  capacityValue      Decimal  @db.Decimal(12, 2)
+  capacityUnit       String
+  status             VehicleOperationalStatus @default(Active)
+  qualification      String?
+  version            Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  driverAllocations DriverVehicleAssignment[]
+
+  @@index([status])
+  @@map("vehicles")
+}
+
+model DriverVehicleAssignment {
+  id          String    @id @default(cuid())
+  driverId    String
+  vehicleId   String
+  assignedFrom DateTime  @default(now())
+  assignedTo  DateTime?
+  reasonCode  String?
+  createdAt   DateTime  @default(now())
+
+  driver  Driver  @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  @@index([driverId, assignedFrom])
+  @@index([vehicleId, assignedFrom])
+  @@map("driver_vehicle_assignments")
+}
+
+model DeliveryZone {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  code        String    @unique
+  active      Boolean   @default(true)
+  priority    Int       @default(0)
+  deliveryFee Decimal?  @db.Decimal(12, 2)
+  currencyCode String   @default("USD")
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  areas     ZoneArea[]
+  driverZones DriverZone[]
+  orders    DeliveryOrder[]
+
+  @@index([active])
+  @@map("delivery_zones")
+}
+
+model ZoneArea {
+  id           String   @id @default(cuid())
+  zoneId       String
+  name         String?
+  latitude     Decimal? @db.Decimal(9, 6)
+  longitude    Decimal? @db.Decimal(9, 6)
+  radiusMeters Decimal? @db.Decimal(12, 2)
+  polygon      Json?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  zone DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@index([zoneId])
+  @@map("zone_areas")
+}
+
+model DriverZone {
+  id        String   @id @default(cuid())
+  driverId  String
+  zoneId    String
+  allowed   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  driver Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  zone   DeliveryZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, zoneId])
+  @@map("driver_zones")
+}
+
+model ServiceType {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  active      Boolean  @default(true)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders DeliveryOrder[]
+
+  @@index([active])
+  @@map("service_types")
+}
+
+model ProofPolicyVersion {
+  id                   String   @id @default(cuid())
+  policyVersion        String   @unique
+  effectiveFrom        DateTime @default(now())
+  requiresRecipientName Boolean @default(true)
+  requiresPhoto        Boolean  @default(true)
+  requiresSignature    Boolean  @default(false)
+  requiresConfirmation Boolean  @default(false)
+  requiresOtp          Boolean  @default(false)
+  minPhotos            Int      @default(1)
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  orders DeliveryOrder[]
+
+  @@index([active])
+  @@map("proof_policy_versions")
+}
+
+model DeliveryOrder {
+  id                  String        @id @default(cuid())
+  orderNumber         String        @unique
+  status              OrderStatus   @default(Pending)
+  customerId          String
+  serviceTypeId       String?
+  proofPolicyId       String?
+  zoneId              String?
+  createdById         String?
+  pickupAddress       Json
+  deliveryAddress     Json
+  pickupInstructions  String?
+  deliveryInstructions String?
+  promisedAtStart     DateTime?
+  promisedAtEnd       DateTime?
+  rescheduledAtStart  DateTime?
+  rescheduledAtEnd    DateTime?
+  deliveryFee         Decimal?      @db.Decimal(12, 2)
+  currencyCode        String        @default("USD") @db.VarChar(3)
+  packageNote         String?
+  pickupPhotoRequired Boolean?
+  readyAt             DateTime?
+  pickedUpAt          DateTime?
+  deliveredAt         DateTime?
+  cancelledAt         DateTime?
+  failedAt            DateTime?
+  returnedAt          DateTime?
+  version             Int           @default(1)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  customer                 Customer                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  serviceType              ServiceType?              @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
+  proofPolicy              ProofPolicyVersion?       @relation(fields: [proofPolicyId], references: [id], onDelete: Restrict)
+  zone                     DeliveryZone?             @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  createdBy                User?                     @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items                    DeliveryItem[]
+  assignments              DeliveryAssignment[]
+  statusHistory            DeliveryStatusHistory[]
+  attempts                 DeliveryAttempt[]
+  rescheduleRecords        RescheduleRecord[]
+  custodyEvents            CustodyEvent[]
+  returnRecords            ReturnRecord[]
+  proofs                   DeliveryProof[]
+  fileObjects              FileObject[]
+  internalNotes            InternalNote[]
+  notifications            Notification[]
+  otpChallenges            OtpChallenge[]
+
+  @@index([customerId])
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@map("delivery_orders")
+}
+
+model DeliveryItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  name        String
+  description String?
+  quantity    Int      @default(1)
+  weight      Decimal? @db.Decimal(12, 3)
+  weightUnit  String?
+  lengthCm    Decimal? @db.Decimal(12, 2)
+  widthCm     Decimal? @db.Decimal(12, 2)
+  heightCm    Decimal? @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+
+  order DeliveryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("delivery_items")
+}
+
+model DeliveryAssignment {
+  id                String           @id @default(cuid())
+  orderId           String
+  driverId          String
+  status            AssignmentStatus @default(Offered)
+  assignedById      String?
+  offerExpiresAt    DateTime?
+  offeredAt         DateTime         @default(now())
+  acceptedAt        DateTime?
+  rejectedAt        DateTime?
+  withdrawnAt       DateTime?
+  releasedAt        DateTime?
+  completedAt       DateTime?
+  reasonCode        String?
+  reasonText        String?
+  version           Int              @default(1)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  order  DeliveryOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  driver Driver        @relation(fields: [driverId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, status])
+  @@index([driverId, status])
+  @@index([status, offerExpiresAt])
+  @@index([offeredAt])
+  @@map("delivery_assignments")
+}
+
+model DeliveryStatusHistory {
+  id           String     @id @default(cuid())
+  orderId      String
+  fromStatus   OrderStatus
+  toStatus     OrderStatus
+  actorId      String?
+  actorType    String
+  reasonCode   String?
+  reasonText   String?
+  requestId    String?
+  version      Int        @default(1)
+  createdAt    DateTime   @default(now())
+
+  order DeliveryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("delivery_status_history")
+}
+
+model DeliveryAttempt {
+  id             String       @id @default(cuid())
+  orderId        String
+  attemptNumber  Int
+  status         AttemptStatus @default(InProgress)
+  startedAt      DateTime     @default(now())
+  endedAt        DateTime?
+  failureReasonId String?
+  failureReasonText String?
+  version        Int          @default(1)
+  createdAt      DateTime     @default(now())
+
+  order          DeliveryOrder          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  failureReason  DeliveryFailureReason? @relation(fields: [failureReasonId], references: [id], onDelete: SetNull)
+  proofs         DeliveryProof[]
+  returnRecords  ReturnRecord[]
+  fileObjects    FileObject[]
+
+  @@unique([orderId, attemptNumber])
+  @@index([orderId, status])
+  @@map("delivery_attempts")
+}
+
+model DeliveryFailureReason {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  label        String
+  requiresText Boolean  @default(false)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  attempts DeliveryAttempt[]
+
+  @@index([active])
+  @@map("delivery_failure_reasons")
+}
+
+model RescheduleRecord {
+  id                String   @id @default(cuid())
+  orderId           String
+  previousStart     DateTime
+  previousEnd       DateTime
+  newStart          DateTime
+  newEnd            DateTime
+  reasonCode        String?
+  reasonText        String?
+  actorId           String?
+  createdAt         DateTime @default(now())
+
+  order DeliveryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("reschedule_records")
+}
+
+model CustodyEvent {
+  id          String     @id @default(cuid())
+  orderId     String
+  fromKind    CustodyKind?
+  fromHolderId String?
+  toKind      CustodyKind
+  toHolderId  String
+  reasonCode  String?
+  reasonText  String?
+  actorId     String?
+  occurredAt  DateTime   @default(now())
+  createdAt   DateTime   @default(now())
+
+  order DeliveryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, occurredAt])
+  @@map("custody_events")
+}
+
+model ReturnRecord {
+  id          String       @id @default(cuid())
+  orderId     String
+  attemptId   String?
+  status      ReturnStatus @default(InProgress)
+  reasonCode  String?
+  reasonText  String?
+  initiatedById String?
+  initiatedAt DateTime    @default(now())
+  confirmedById String?
+  confirmedAt DateTime?
+  evidenceId  String?
+  version     Int          @default(1)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  order DeliveryOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  attempt DeliveryAttempt? @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("return_records")
+}
+
+model DeliveryProof {
+  id             String           @id @default(cuid())
+  orderId        String
+  attemptId      String
+  evidenceType   ProofEvidenceType
+  evidenceValue  String?
+  confirmationFlag Boolean?
+  status         ProofStatus      @default(Pending)
+  submittedById  String?
+  submittedAt    DateTime         @default(now())
+  correctedById  String?
+  correctedAt    DateTime?
+  correctedFromId String?
+  version        Int              @default(1)
+  createdAt      DateTime         @default(now())
+
+  order   DeliveryOrder   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  attempt DeliveryAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  fileId  String?         @unique
+  file    FileObject?     @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, status])
+  @@index([attemptId])
+  @@map("delivery_proofs")
+}
+
+model FileObject {
+  id           String     @id @default(cuid())
+  orderId      String?
+  attemptId    String?
+  provider     String
+  key          String     @unique
+  originalName String?
+  mimeType     String
+  sizeBytes    Int
+  status       FileStatus @default(Uploaded)
+  uploadedById String?
+  uploadedAt   DateTime   @default(now())
+  scannedAt    DateTime?
+  scanResult   String?
+  expiresAt    DateTime?
+  version      Int        @default(1)
+  createdAt    DateTime   @default(now())
+
+  order   DeliveryOrder?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  attempt DeliveryAttempt? @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+  proof   DeliveryProof?
+
+  @@index([orderId, status])
+  @@index([status, uploadedAt])
+  @@index([expiresAt])
+  @@map("file_objects")
+}
+
+model OtpChallenge {
+  id             String    @id @default(cuid())
+  orderId        String?
+  purpose        OtpPurpose
+  identifier     String
+  challengeHash  String
+  expiresAt      DateTime
+  attemptsLeft   Int       @default(5)
+  consumedAt     DateTime?
+  resentAt       DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+
+  order DeliveryOrder? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, purpose])
+  @@index([identifier, purpose])
+  @@map("otp_challenges")
+}
+
+model DriverLocation {
+  id              String   @id @default(cuid())
+  driverId        String
+  assignmentId    String?
+  capturedAt      DateTime
+  receivedAt      DateTime @default(now())
+  latitude        Decimal  @db.Decimal(9, 6)
+  longitude       Decimal  @db.Decimal(9, 6)
+  accuracyMeters  Decimal? @db.Decimal(12, 2)
+  createdAt       DateTime @default(now())
+
+  driver   Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, capturedAt])
+  @@index([receivedAt])
+  @@map("driver_locations")
+}
+
+model InternalNote {
+  id        String   @id @default(cuid())
+  orderId   String
+  authorId  String?
+  body      String
+  createdAt DateTime @default(now())
+
+  order DeliveryOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("internal_notes")
+}
+
+model Notification {
+  id         String             @id @default(cuid())
+  userId     String
+  orderId    String?
+  type       String
+  title      String
+  message    String
+  channel    NotificationChannel @default(InApp)
+  payload    Json?
+  readAt     DateTime?
+  createdAt  DateTime           @default(now())
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order DeliveryOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  deliveries NotificationDelivery[]
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@index([orderId])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id             String                   @id @default(cuid())
+  notificationId String
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus @default(Pending)
+  providerRef    String?
+  attempts       Int                      @default(0)
+  nextRetryAt    DateTime?
+  lastError      String?
+  sentAt         DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRetryAt])
+  @@index([notificationId])
+  @@map("notification_deliveries")
+}
+
+model OutboxEvent {
+  id            String       @id @default(cuid())
+  eventType     String
+  eventVersion  String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        OutboxStatus @default(Pending)
+  attempts      Int          @default(0)
+  availableAfter DateTime?
+  processedAt   DateTime?
+  lastError     String?
+  traceId       String?
+  occurredAt    DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+
+  @@index([status, availableAfter])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}
+
+model IdempotencyRecord {
+  id          String           @id @default(cuid())
+  scopeKey    String
+  operation   String
+  key         String
+  requestHash String
+  response    Json?
+  status      IdempotencyStatus @default(InProgress)
+  createdAt   DateTime         @default(now())
+  expiresAt   DateTime
+
+  @@unique([scopeKey, operation, key])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorId      String?
+  actorType    String
+  action       String
+  resourceType String
+  resourceId   String
+  before       Json?
+  after        Json?
+  reason       String?
+  requestId    String?
+  ip           String?
+  result       String
+  occurredAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([resourceType, resourceId])
+  @@index([actorId, occurredAt])
+  @@index([occurredAt])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  value         Json
+  sensitive     Boolean  @default(false)
+  updatedById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("system_settings")
+}
