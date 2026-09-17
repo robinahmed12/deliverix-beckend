@@ -34,7 +34,14 @@ export function validate(schemas: ValidationSchemas) {
       if (!result.success) {
         errors.query = result.error.flatten();
       } else {
-        req.query = result.data as typeof req.query;
+        // Express 5 exposes `req.query` as a getter-only accessor on the request
+        // prototype, so a direct assignment throws. Shadow it on the instance.
+        Object.defineProperty(req, "query", {
+          value: result.data,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       }
     }
 
