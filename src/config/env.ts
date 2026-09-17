@@ -1,8 +1,21 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const booleanEnv = (defaultValue: boolean) =>
+  z.preprocess(
+    (val) => {
+      if (val === undefined || val === "") return defaultValue;
+      if (typeof val === "string") return val.toLowerCase() === "true" || val === "1";
+      return val;
+    },
+    z.boolean(),
+  );
+
 const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z.preprocess(
+    (val) => (val === undefined || val === "" ? undefined : val),
+    z.enum(["development", "test", "production"]).default("development"),
+  ),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1),
   JWT_ACCESS_SECRET: z.string().min(32),
@@ -17,7 +30,7 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
-  LOG_PRETTY: z.coerce.boolean().default(false),
+  LOG_PRETTY: booleanEnv(false),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
   SMTP_HOST: z.string().optional(),

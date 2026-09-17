@@ -19,6 +19,7 @@ const options = {
   redact: { paths: redactPaths, censor: "[REDACTED]" },
 };
 
-export const logger = env.LOG_PRETTY
-  ? pino({ ...options, transport: { target: "pino-pretty" } })
-  : pino(options);
+export const logger =
+  env.LOG_PRETTY && env.NODE_ENV !== "production"
+    ? pino({ ...options, transport: { target: "pino-pretty" } })
+    : pino(options);
