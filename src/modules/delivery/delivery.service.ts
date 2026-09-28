@@ -1,5 +1,6 @@
 import { prisma } from "../../shared/utils/prisma.js";
 import { writeAudit } from "../../shared/utils/audit.js";
+import { releaseDriverIfIdle } from "../../shared/utils/driver-state.js";
 import { AppError } from "../../shared/errors/app-error.js";
 import { ErrorCodes } from "../../shared/errors/error-codes.js";
 import { decodeCursor, encodeCursor } from "../../shared/utils/cursor.js";
@@ -79,6 +80,21 @@ async function loadAndLockOrder(tx: Tx, orderId: string) {
   const order = await tx.deliveryOrder.findUnique({ where: { id: orderId } });
   if (!order) throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "Order not found");
   return order;
+}
+
+/**
+ * Optimistic concurrency guard for the endpoints that require `If-Match`.
+ *
+ * `requireVersion` only checks that the header is present and parseable; nothing
+ * compared it to the stored version, so a stale `If-Match` was accepted and the
+ * write silently clobbered whatever landed in between. Call this *after*
+ * `lockOrder`, while holding the advisory lock, so the check and the write it
+ * guards cannot be separated by a concurrent transaction.
+ */
+function assertOrderVersion(order: { version: number }, expectedVersion: number) {
+  if (order.version !== expectedVersion) {
+    throw new AppError(412, ErrorCodes.RESOURCE_VERSION_MISMATCH, "Resource version mismatch");
+  }
 }
 
 async function loadActiveAssignment(tx: Tx, orderId: string, auth: { userId: string; roles: string[] }) {
@@ -258,10 +274,6 @@ export class DeliveryService {
       throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only Assigned orders can be picked up");
     }
 
-    if (order.version !== undefined) {
-      // If-Match via req.version is validated at middleware level
-    }
-
     const result = await prisma.$transaction(async (tx) => {
       await lockOrder(tx, orderId);
       const current = await loadAndLockOrder(tx, orderId);
@@ -351,12 +363,14 @@ export class DeliveryService {
 
   async deliver(
     orderId: string,
+    expectedVersion: number,
     auth: { userId: string; roles: string[] },
     meta: { requestId?: string; ip?: string },
   ) {
     const result = await prisma.$transaction(async (tx) => {
       await lockOrder(tx, orderId);
       const order = await loadAndLockOrder(tx, orderId);
+      assertOrderVersion(order, expectedVersion);
       if (order.status !== "OutForDelivery") {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only OutForDelivery orders can be marked Delivered");
       }
@@ -401,6 +415,10 @@ export class DeliveryService {
       await recordTransition(tx, orderId, "OutForDelivery", "Delivered", auth.userId, meta, updated.version, "DELIVERY_COMPLETED");
       await emitOutbox(tx, { eventType: "order.delivered", aggregateType: "order", aggregateId: orderId, payload: { orderId, attemptId: attempt.id, driverId: driver.id } });
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.completed", resourceType: "order", resourceId: orderId, before: { status: order.status }, after: { status: "Delivered" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
+
+      // The delivery episode is over: hand the driver back to the pool so they
+      // can be offered the next order.
+      await releaseDriverIfIdle(tx, driver.id, "DELIVERY_COMPLETED", auth.userId);
 
       return updated;
     });
@@ -497,6 +515,7 @@ export class DeliveryService {
   async reschedule(
     orderId: string,
     data: { rescheduledAtStart: Date; rescheduledAtEnd: Date; reasonCode: string; reasonText?: string | null },
+    expectedVersion: number,
     actorId: string,
     meta: { requestId?: string; ip?: string },
   ) {
@@ -507,6 +526,7 @@ export class DeliveryService {
     const result = await prisma.$transaction(async (tx) => {
       await lockOrder(tx, orderId);
       const order = await loadAndLockOrder(tx, orderId);
+      assertOrderVersion(order, expectedVersion);
       if (!RESCHEDULABLE_STATES.has(order.status)) {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Order cannot be rescheduled in its current state");
       }
@@ -547,12 +567,14 @@ export class DeliveryService {
   async startReturn(
     orderId: string,
     data: { reasonCode: string; reasonText?: string | null },
+    expectedVersion: number,
     actorId: string,
     meta: { requestId?: string; ip?: string },
   ) {
     const result = await prisma.$transaction(async (tx) => {
       await lockOrder(tx, orderId);
       const order = await loadAndLockOrder(tx, orderId);
+      assertOrderVersion(order, expectedVersion);
       if (order.status !== "Failed") {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only Failed orders can initiate a return");
       }
@@ -628,12 +650,14 @@ export class DeliveryService {
 
   async confirmReturn(
     orderId: string,
+    expectedVersion: number,
     auth: { userId: string; roles: string[] },
     meta: { requestId?: string; ip?: string },
   ) {
     const result = await prisma.$transaction(async (tx) => {
       await lockOrder(tx, orderId);
       const order = await loadAndLockOrder(tx, orderId);
+      assertOrderVersion(order, expectedVersion);
       if (order.status !== "ReturnInProgress") {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Order is not in ReturnInProgress state");
       }
@@ -677,12 +701,14 @@ export class DeliveryService {
   async confirmPickupReceipt(
     orderId: string,
     data: { reasonCode: string; reasonText?: string | null },
+    expectedVersion: number,
     actorId: string,
     meta: { requestId?: string; ip?: string },
   ) {
     const result = await prisma.$transaction(async (tx) => {
       await lockOrder(tx, orderId);
       const order = await loadAndLockOrder(tx, orderId);
+      assertOrderVersion(order, expectedVersion);
       if (order.status !== "Failed") {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only Failed orders can have pickup receipt confirmed");
       }

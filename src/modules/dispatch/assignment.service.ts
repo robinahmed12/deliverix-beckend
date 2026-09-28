@@ -203,7 +203,7 @@ export class AssignmentService {
         data: { status: "Accepted", acceptedAt: new Date(), version: { increment: 1 } },
       });
 
-      await tx.deliveryOrder.update({
+      const updatedOrder = await tx.deliveryOrder.update({
         where: { id: current.orderId },
         data: { status: "Assigned", version: { increment: 1 } },
       });
@@ -217,7 +217,7 @@ export class AssignmentService {
           actorType: "user",
           reasonCode: "ASSIGNMENT_ACCEPTED",
           requestId: meta0(),
-          version: 1,
+          version: updatedOrder.version,
         },
       });
 

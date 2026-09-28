@@ -16,6 +16,13 @@ function str(value: unknown): string {
 
 const auth = (req: Request) => ({ userId: req.auth!.userId, roles: req.auth!.roles });
 
+/**
+ * `requireVersion` runs before these handlers and guarantees the header is
+ * present and parseable, so the comparison against the stored version happens
+ * in the service while the order's advisory lock is held.
+ */
+const version = (req: Request): number => req.version!;
+
 export class DeliveryController {
   async pickup(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -37,7 +44,7 @@ export class DeliveryController {
 
   async deliver(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.status(200).json({ data: await deliveryService.deliver(str(req.params.orderId), auth(req), meta(req)) });
+      res.status(200).json({ data: await deliveryService.deliver(str(req.params.orderId), version(req), auth(req), meta(req)) });
     } catch (err) { next(err); }
   }
 
@@ -55,13 +62,13 @@ export class DeliveryController {
 
   async reschedule(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.status(200).json({ data: await deliveryService.reschedule(str(req.params.orderId), req.body, req.auth!.userId, meta(req)) });
+      res.status(200).json({ data: await deliveryService.reschedule(str(req.params.orderId), req.body, version(req), req.auth!.userId, meta(req)) });
     } catch (err) { next(err); }
   }
 
   async startReturn(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.status(200).json({ data: await deliveryService.startReturn(str(req.params.orderId), req.body, req.auth!.userId, meta(req)) });
+      res.status(200).json({ data: await deliveryService.startReturn(str(req.params.orderId), req.body, version(req), req.auth!.userId, meta(req)) });
     } catch (err) { next(err); }
   }
 
@@ -73,13 +80,13 @@ export class DeliveryController {
 
   async confirmReturn(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.status(200).json({ data: await deliveryService.confirmReturn(str(req.params.orderId), auth(req), meta(req)) });
+      res.status(200).json({ data: await deliveryService.confirmReturn(str(req.params.orderId), version(req), auth(req), meta(req)) });
     } catch (err) { next(err); }
   }
 
   async confirmPickupReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.status(200).json({ data: await deliveryService.confirmPickupReceipt(str(req.params.orderId), req.body, req.auth!.userId, meta(req)) });
+      res.status(200).json({ data: await deliveryService.confirmPickupReceipt(str(req.params.orderId), req.body, version(req), req.auth!.userId, meta(req)) });
     } catch (err) { next(err); }
   }
 
