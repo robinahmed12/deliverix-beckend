@@ -335,19 +335,51 @@ export class AuthService {
 
     const passwordHash = await hashPassword(password);
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash,
-        name,
-        status: "Active",
-        invitationTokenHash: null,
-        invitationExpiresAt: null,
-      },
+    const fullUser = await getUserWithRoles(user.id);
+
+    const roles = fullUser.roles.map((ur) => ur.role.name);
+    const permissions = fullUser.roles.flatMap((ur) =>
+      ur.role.permissions.map((rp) => rp.permission.code),
+    );
+    const accessToken = signAccessToken({
+      userId: fullUser.id,
+      email: fullUser.email,
+      roles,
+      permissions,
     });
 
-    const fullUser = await getUserWithRoles(user.id);
-    return createTokenPair(fullUser);
+    const refreshData = generateRefreshToken();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    // Mutations run in one transaction so a failure writing the refresh
+    // credential cannot leave the user Active with a cleared token (which
+    // would make the invitation unrecoverable on retry).
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          name,
+          status: "Active",
+          invitationTokenHash: null,
+          invitationExpiresAt: null,
+        },
+      }),
+      prisma.refreshCredential.create({
+        data: {
+          userId: user.id,
+          familyId: refreshData.familyId,
+          tokenHash: refreshData.tokenHash,
+          expiresAt,
+        },
+      }),
+    ]);
+
+    return {
+      tokens: { accessToken, refreshToken: refreshData.token },
+      user: toUserDto(fullUser),
+    };
   }
 
   async getMe(userId: string) {
