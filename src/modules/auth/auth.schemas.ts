@@ -11,7 +11,10 @@ export const mfaVerifySchema = z.object({
 });
 
 export const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
+  // Optional: browsers (deliverix-web) send the refresh token via the
+  // httpOnly `refresh_token` cookie and POST an empty body. Programmatic
+  // clients may still send it in the body.
+  refreshToken: z.string().min(1).optional(),
 });
 
 export const forgotPasswordSchema = z.object({

@@ -1,3 +1,4 @@
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
@@ -37,8 +38,10 @@ export function createApp(): express.Express {
       origin: env.CORS_ORIGINS.split(",")
         .map((origin) => origin.trim())
         .filter((origin) => origin.length > 0),
+      credentials: true,
     }),
   );
+  app.use(cookieParser());
   app.use(express.json({ limit: "1mb" }));
   app.use(pinoHttp({ logger }));
 

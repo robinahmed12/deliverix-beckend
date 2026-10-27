@@ -54,6 +54,10 @@ export class AuthController {
     try {
       const refreshToken = req.body.refreshToken ?? req.cookies?.refresh_token;
       if (!refreshToken) {
+        // Session is unrecoverable; clear the stale cookies so browser-side
+        // guards (e.g. the frontend auth layout) don't loop back into the app.
+        res.clearCookie("access_token");
+        res.clearCookie("refresh_token");
         res.status(401).json({
           type: "about:blank",
           title: "Unauthorized",
@@ -79,6 +83,11 @@ export class AuthController {
       });
       res.status(200).json({ data: { rotated: true } });
     } catch (err) {
+      // Refresh failed — the current cookies point at an invalid/expired
+      // session. Clear them so the browser falls out to /login cleanly
+      // instead of bouncing between auth guards with a dead session.
+      res.clearCookie("access_token");
+      res.clearCookie("refresh_token");
       next(err);
     }
   }

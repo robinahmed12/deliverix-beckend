@@ -76,6 +76,20 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     return;
   }
 
+  // body-parser reports malformed JSON as `type: "entity.parse.failed"`
+  // (outbox: it must surface as 400, never as an unhandled 500).
+  if ((error as { type?: string }).type === "entity.parse.failed") {
+    res.status(400).json({
+      type: "about:blank",
+      title: titleFor(400),
+      status: 400,
+      detail: "Request body is not valid JSON",
+      code: "VALIDATION_FAILED" satisfies ErrorCode,
+      requestId,
+    });
+    return;
+  }
+
   logger.error({ err: error, requestId, route: req.originalUrl }, "unhandled error");
   res.status(500).json({
     type: "about:blank",
