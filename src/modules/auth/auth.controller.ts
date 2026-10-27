@@ -145,7 +145,7 @@ export class AuthController {
   async acceptInvitation(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const result = await authService.acceptInvitation(
-        req.body.token,
+        req.body.token ?? (req.query as Record<string, unknown>).token as string,
         req.body.password,
         req.body.name,
       );
