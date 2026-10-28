@@ -91,10 +91,30 @@ export class DriversService {
   }
 
   async getByAccountId(accountId: string) {
-    const driver = await prisma.driver.findUnique({ where: { accountId } });
+    const driver = await prisma.driver.findUnique({
+      where: { accountId },
+      include: {
+        vehicleAllocations: {
+          where: { assignedTo: null },
+          include: { vehicle: true },
+          orderBy: { assignedFrom: "desc" },
+        },
+      },
+    });
     if (!driver) throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "Driver profile not found");
-    return driverDto(driver);
+    return {
+      ...driverDto(driver),
+      currentVehicle: driver.vehicleAllocations[0]?.vehicle
+        ? {
+            id: driver.vehicleAllocations[0].vehicle.id,
+            registrationNumber: driver.vehicleAllocations[0].vehicle.registrationNumber,
+            vehicleType: driver.vehicleAllocations[0].vehicle.vehicleType,
+            status: driver.vehicleAllocations[0].vehicle.status,
+          }
+        : null,
+    };
   }
+
 
   async create(
     data: { accountId: string; contactPhone: string; licenseNumber?: string | null; licenseExpiry?: Date | null; qualification?: string | null; driverCode?: string },
@@ -226,10 +246,24 @@ export class DriversService {
     return driverDto(updated);
   }
 
-  async listAssignments(driverId: string) {
+  async listAssignments(driverId: string, statusFilter?: string) {
+    const where: { driverId: string; status?: { in: any[] } | any } = { driverId };
+    if (!statusFilter || statusFilter === "open") {
+      where.status = { in: ["Offered", "Accepted"] };
+    } else if (statusFilter !== "all") {
+      where.status = statusFilter;
+    }
+
     const assignments = await prisma.deliveryAssignment.findMany({
-      where: { driverId, status: { in: ["Offered", "Accepted"] } },
-      include: { order: { include: { items: true } } },
+      where,
+      include: {
+        order: {
+          include: {
+            items: true,
+            customer: { select: { name: true, phone: true } },
+          },
+        },
+      },
       orderBy: { offeredAt: "desc" },
     });
     return assignments.map((a) => ({
@@ -237,12 +271,18 @@ export class DriversService {
       status: a.status,
       offerExpiresAt: a.offerExpiresAt,
       offeredAt: a.offeredAt,
+      acceptedAt: a.acceptedAt,
+      completedAt: a.completedAt,
+      reasonCode: a.reasonCode,
       order: {
         id: a.order.id,
         orderNumber: a.order.orderNumber,
         status: a.order.status,
         pickupAddress: a.order.pickupAddress,
         deliveryAddress: a.order.deliveryAddress,
+        customerName: a.order.customer?.name ?? null,
+        customerPhone: a.order.customer?.phone ?? null,
+        itemCount: a.order.items?.length ?? 0,
       },
     }));
   }

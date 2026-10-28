@@ -28,3 +28,7 @@ export const updateDriverSchema = z.object({
 export const setAvailabilitySchema = z.object({
   state: z.enum(["Offline", "Available", "Unavailable"]),
 });
+
+export const listMyAssignmentsQuerySchema = z.object({
+  status: z.enum(["Offered", "Accepted", "Rejected", "Expired", "Withdrawn", "Released", "Completed", "all"]).optional(),
+});

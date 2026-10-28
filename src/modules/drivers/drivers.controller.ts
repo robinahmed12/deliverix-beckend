@@ -70,7 +70,9 @@ export class DriversController {
   async myAssignments(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const profile = await driversService.getByAccountId(req.auth!.userId);
-      res.status(200).json({ data: await driversService.listAssignments(profile.id) });
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      res.status(200).json({ data: await driversService.listAssignments(profile.id, status) });
     } catch (err) { next(err); }
   }
+
 }

@@ -10,6 +10,7 @@ import {
   createDriverSchema,
   updateDriverSchema,
   setAvailabilitySchema,
+  listMyAssignmentsQuerySchema,
 } from "./drivers.schemas.js";
 
 const router = Router();
@@ -19,8 +20,9 @@ router.get("/", authenticate, authorize("drivers.view", "drivers.manage", "dispa
 router.post("/", authenticate, authorize("drivers.manage"), idempotent(), validate({ body: createDriverSchema }), controller.create.bind(controller));
 router.get("/me", authenticate, authorize("drivers.view", "deliveries.execute"), controller.me.bind(controller));
 router.put("/me/availability", authenticate, authorize("deliveries.execute"), validate({ body: setAvailabilitySchema }), controller.setAvailability.bind(controller));
-router.get("/me/assignments", authenticate, authorize("deliveries.execute"), controller.myAssignments.bind(controller));
+router.get("/me/assignments", authenticate, authorize("deliveries.execute"), validate({ query: listMyAssignmentsQuerySchema }), controller.myAssignments.bind(controller));
 router.get("/:id", authenticate, authorize("drivers.view", "drivers.manage", "dispatch.view-queue"), controller.getById.bind(controller));
+
 router.patch("/:id", authenticate, authorize("drivers.manage"), requireVersion, validate({ body: updateDriverSchema }), controller.update.bind(controller));
 
 export default router;
