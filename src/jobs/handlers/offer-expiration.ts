@@ -30,10 +30,10 @@ function emitOutbox(
 export const offerExpirationJob: JobHandler<ExpiredOfferRow> = {
   name: "offer-expiration",
   query: `
-    SELECT d.id, d.driver_id AS "driverId", d.order_id AS "orderId"
+    SELECT d.id, d."driverId" AS "driverId", d."orderId" AS "orderId"
     FROM delivery_assignments d
-    WHERE d.status = 'Offered' AND d.offer_expires_at <= NOW()
-    ORDER BY d.offer_expires_at ASC
+    WHERE d.status = 'Offered' AND d."offerExpiresAt" <= NOW()
+    ORDER BY d."offerExpiresAt" ASC
     LIMIT $1
     FOR UPDATE SKIP LOCKED
   `,

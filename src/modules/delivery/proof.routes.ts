@@ -10,7 +10,11 @@ const router = Router();
 const controller = new ProofController();
 
 router.post("/orders/:orderId/proofs", authenticate, authorize("deliveries.execute"), idempotent(), validate({ body: submitProofSchema }), controller.submit.bind(controller));
-router.get("/orders/:orderId/proofs", authenticate, authorize("orders.view"), validate({ query: listProofsQuerySchema }), controller.list.bind(controller));
+// `orders.view` for staff/customer; `deliveries.execute` additionally admits
+// the assigned driver, who needs the submitted-evidence list on the delivery
+// screen. Scoping for non-staff callers (active assignment / own order) is
+// enforced inside ProofService.listProofs.
+router.get("/orders/:orderId/proofs", authenticate, authorize("orders.view", "deliveries.execute"), validate({ query: listProofsQuerySchema }), controller.list.bind(controller));
 router.post("/orders/:orderId/proofs/otp", authenticate, authorize("deliveries.execute"), idempotent(), controller.generateOtp.bind(controller));
 
 export default router;

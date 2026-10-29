@@ -58,7 +58,14 @@ router.post(
   controller.createNote.bind(controller),
 );
 
-router.get("/:id", authenticate, authorize("orders.view"), controller.getById.bind(controller));
+/**
+ * `orders.view` covers staff and the owning customer. `deliveries.execute`
+ * additionally admits the currently-assigned driver; the service then enforces
+ * that the driver actually holds an active/recent assignment for THIS order
+ * (POD-002/POD-006-style order-level authorization). Without the shared escape
+ * the driver cannot even load the order they are delivering.
+ */
+router.get("/:id", authenticate, authorize("orders.view", "deliveries.execute"), controller.getById.bind(controller));
 
 router.patch(
   "/:id",

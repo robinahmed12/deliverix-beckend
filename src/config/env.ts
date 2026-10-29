@@ -41,6 +41,13 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+  /**
+   * Stand-in for the external malware scanner that normally calls
+   * `POST /files/:id/scan-result`. When enabled, a background job flips files
+   * out of `Scanning` so proof evidence can reach `Accepted`. Defaults ON in
+   * development, OFF in production/test.
+   */
+  FILE_SCAN_SIMULATION: booleanEnv(process.env.NODE_ENV === "production" ? false : true),
 });
 
 const parsed = envSchema.safeParse(process.env);

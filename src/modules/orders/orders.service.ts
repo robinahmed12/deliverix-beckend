@@ -60,6 +60,34 @@ function orderDto(order: Record<string, unknown>) {
   };
 }
 
+/**
+ * Effective POD requirements for the order (POD-001/POD-005). Defaults mirror
+ * `fetchProofPolicy` in the delivery module: recipient name plus at least one
+ * photo. The UI uses this to render the evidence form and know when "Complete
+ * Delivery" can succeed.
+ */
+async function orderProofPolicyDto(proofPolicyId: string | null) {
+  const fallback = {
+    requiresRecipientName: true,
+    requiresPhoto: true,
+    requiresSignature: false,
+    requiresConfirmation: false,
+    requiresOtp: false,
+    minPhotos: 1,
+  };
+  if (!proofPolicyId) return fallback;
+  const pp = await prisma.proofPolicyVersion.findUnique({ where: { id: proofPolicyId } });
+  if (!pp || !pp.active) return fallback;
+  return {
+    requiresRecipientName: pp.requiresRecipientName,
+    requiresPhoto: pp.requiresPhoto,
+    requiresSignature: pp.requiresSignature,
+    requiresConfirmation: pp.requiresConfirmation,
+    requiresOtp: pp.requiresOtp,
+    minPhotos: pp.minPhotos,
+  };
+}
+
 export class OrdersService {
   async create(
     data: {
@@ -270,13 +298,41 @@ export class OrdersService {
 
     const isStaff = auth.roles.some((r) => ["admin", "dispatcher", "support"].includes(r));
     if (!isStaff) {
+      let allowed = false;
+
       const customer = await prisma.customer.findUnique({ where: { accountId: auth.userId } });
-      if (!customer || customer.id !== order.customerId) {
+      if (customer && customer.id === order.customerId) {
+        allowed = true;
+      }
+
+      if (!allowed) {
+        // Drivers with `deliveries.execute` may read this order only while they
+        // hold its assignment (current or just completed, e.g. the screen they
+        // are standing on right after delivering). Arbitrary order browsing
+        // stays forbidden.
+        const driver = await prisma.driver.findUnique({
+          where: { accountId: auth.userId },
+          select: { id: true },
+        });
+        if (driver) {
+          const assignment = await prisma.deliveryAssignment.findFirst({
+            where: {
+              orderId: id,
+              driverId: driver.id,
+              status: { in: ["Accepted", "Completed"] },
+            },
+          });
+          if (assignment) allowed = true;
+        }
+      }
+
+      if (!allowed) {
         throw new AppError(403, ErrorCodes.FORBIDDEN, "Access denied to this order");
       }
     }
 
-    return orderDto(order as unknown as Record<string, unknown>);
+    const proofPolicy = await orderProofPolicyDto(order.proofPolicyId);
+    return { ...orderDto(order as unknown as Record<string, unknown>), proofPolicy };
   }
 
   async update(

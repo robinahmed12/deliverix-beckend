@@ -72,4 +72,17 @@ export class FilesController {
       res.status(200).json({ data: await filesService.updateScanStatus(str(req.params.id), req.body, meta(req)) });
     } catch (err) { next(err); }
   }
+
+  async discard(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      res.status(200).json({ data: await filesService.discard(str(req.params.id), auth(req), meta(req)) });
+    } catch (err) { next(err); }
+  }
+
+  async listUnlinked(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orderId = typeof req.query.orderId === "string" ? req.query.orderId : "";
+      res.status(200).json(await filesService.listUnlinked(orderId, auth(req)));
+    } catch (err) { next(err); }
+  }
 }

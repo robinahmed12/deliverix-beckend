@@ -4,7 +4,9 @@ import { offerExpirationJob } from "./handlers/offer-expiration.js";
 import { outboxDispatchJob, recoverInterruptedOutboxEvents } from "./handlers/outbox-dispatch.js";
 import { notificationRetryJob } from "./handlers/notification-retry.js";
 import { fileCleanupJob } from "./handlers/file-cleanup.js";
+import { fileScanSimulationJob } from "./handlers/file-scan-simulation.js";
 import { runRetentionCleanup } from "./handlers/retention-cleanup.js";
+import { env } from "../config/env.js";
 import { logger } from "../shared/utils/logger.js";
 
 const runner = new JobRunner();
@@ -42,6 +44,16 @@ const jobs: RegisteredJob[] = [
     run: async () => { await runner.runOnce(fileCleanupJob); },
     running: false,
   },
+  ...(env.FILE_SCAN_SIMULATION
+    ? [
+        {
+          name: "file-scan-simulation",
+          schedule: "*/5 * * * * *",
+          run: async () => { await runner.runOnce(fileScanSimulationJob); },
+          running: false,
+        } satisfies RegisteredJob,
+      ]
+    : []),
   {
     name: "retention-cleanup",
     schedule: "0 2 * * *",

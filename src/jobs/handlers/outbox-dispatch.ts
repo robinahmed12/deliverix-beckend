@@ -23,19 +23,19 @@ export const outboxDispatchJob: JobHandler<OutboxRow> = {
   query: `
     SELECT
       id,
-      event_type                                   AS "eventType",
-      event_version                                AS "eventVersion",
-      aggregate_type                               AS "aggregateType",
-      aggregate_id                                 AS "aggregateId",
+      "eventType"                                  AS "eventType",
+      "eventVersion"                               AS "eventVersion",
+      "aggregateType"                              AS "aggregateType",
+      "aggregateId"                                AS "aggregateId",
       payload,
       status,
       attempts,
-      available_after                              AS "availableAfter",
-      occurred_at                                  AS "occurredAt"
+      "availableAfter"                             AS "availableAfter",
+      "occurredAt"                                 AS "occurredAt"
     FROM outbox_events
     WHERE status IN ('Pending', 'Failed')
-      AND (available_after IS NULL OR available_after <= NOW())
-    ORDER BY occurred_at ASC
+      AND ("availableAfter" IS NULL OR "availableAfter" <= NOW())
+    ORDER BY "occurredAt" ASC
     LIMIT $1
     FOR UPDATE SKIP LOCKED
   `,

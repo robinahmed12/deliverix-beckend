@@ -15,8 +15,8 @@ export const fileCleanupJob: JobHandler<FileRow> = {
     SELECT f.id, f.key, f.provider
     FROM file_objects f
     WHERE f.status IN ('Uploaded', 'Scanning')
-      AND f.uploaded_at < NOW() - INTERVAL '24 hours'
-    ORDER BY f.uploaded_at ASC
+      AND f."uploadedAt" < NOW() - INTERVAL '24 hours'
+    ORDER BY f."uploadedAt" ASC
     LIMIT $1
     FOR UPDATE SKIP LOCKED
   `,

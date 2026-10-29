@@ -16,15 +16,15 @@ export const notificationRetryJob: JobHandler<NotificationDeliveryRow> = {
   query: `
     SELECT
       nd.id,
-      nd.notification_id      AS "notificationId",
+      nd."notificationId"     AS "notificationId",
       nd.channel,
       nd.status,
       nd.attempts,
-      nd.next_retry_at        AS "nextRetryAt"
+      nd."nextRetryAt"        AS "nextRetryAt"
     FROM notification_deliveries nd
     WHERE nd.status IN ('Pending', 'Failed')
-      AND (nd.next_retry_at IS NULL OR nd.next_retry_at <= NOW())
-    ORDER BY nd.created_at ASC
+      AND (nd."nextRetryAt" IS NULL OR nd."nextRetryAt" <= NOW())
+    ORDER BY nd."createdAt" ASC
     LIMIT $1
     FOR UPDATE SKIP LOCKED
   `,
