@@ -11,13 +11,13 @@ This task list tracks the step-by-step implementation of the **Driver Journey Li
 | **Phase 1: Driver Availability & State** | 3 | 3 | 0 | 0 | 100% |
 | **Phase 2: Email Integration & Templates** | 7 | 7 | 0 | 0 | 100% |
 | **Phase 3: Outbox Payload Enrichment** | 6 | 6 | 0 | 0 | 100% |
-| **Phase 4: Dual-Channel Notification Engine** | 4 | 0 | 0 | 4 | 0% |
+| **Phase 4: Dual-Channel Notification Engine** | 4 | 4 | 0 | 0 | 100% |
 | **Phase 5: Automated Verification & Tests** | 4 | 0 | 0 | 4 | 0% |
 | **Phase 6: Manual Verification & E2E Validation** | 3 | 0 | 0 | 3 | 0% |
-| **Total** | **27** | **16** | **0** | **11** | **~59%** |
+| **Total** | **27** | **20** | **0** | **7** | **~74%** |
 
 ```
-Progress: [████████████▒▒▒▒▒▒▒▒] 59% (16 / 27 subtasks credited)
+Progress: [███████████████▒▒▒▒▒] 74% (20 / 27 subtasks credited)
 ```
 
 ---
@@ -100,25 +100,26 @@ Progress: [████████████▒▒▒▒▒▒▒▒] 59% (16
 
 ## Phase 4: Background Jobs & Dual-Channel Notification Engine
 
-> Status: **Pending (0%)**
+> Status: **Completed (100%)**
 >
 > Requirements: `JOB-001..006`, `NOT-001..006`, `ASM-003`.
 
-- [ ] **Task 4.1**: Update `src/jobs/handlers/outbox-dispatch.ts` `resolveTarget()`.
-  - Register all 6 driver lifecycle events (`assignment.accepted`, `order.picked_up`, `order.in_transit`, `order.out_for_delivery`, `order.delivered`, `order.failed`).
-  - Resolve customer profile (`customer.name`, `customer.email`, `customer.accountId`), order number, and driver details.
-- [ ] **Task 4.2**: Implement Guest Customer Notification Support (`ASM-003`).
-  - If `customer.accountId` is null, do not fail or discard the event.
-  - Allow target resolution to proceed for email delivery targeting `customer.email`.
+- [x] **Task 4.1**: Update `src/jobs/handlers/outbox-dispatch.ts` `resolveTarget()`.
+  - Registered all 6 driver lifecycle events (`assignment.accepted`, `order.picked_up`, `order.in_transit`, `order.out_for_delivery`, `order.delivered`, `order.failed`).
+  - Resolves customer profile (`customer.name`, `customer.email`, `customer.accountId`), order number, delivery address, and driver details.
+- [x] **Task 4.2**: Implement Guest Customer Notification Support (`ASM-003`).
+  - Supports orders where `customer.accountId` is null without discarding the event.
+  - Passes full target resolution for direct email dispatch targeting `customer.email`.
   - *File*: `src/jobs/handlers/outbox-dispatch.ts`
-- [ ] **Task 4.3**: Implement Dual-Channel Record Creation in `outbox-dispatch.ts`.
-  - If `customer.accountId` exists: create `Notification` (InApp) + `NotificationDelivery` (`channel: 'InApp'`).
-  - If `customer.email` exists: create `NotificationDelivery` (`channel: 'Email'`) with template payload.
-  - *File*: `src/jobs/handlers/outbox-dispatch.ts`
-- [ ] **Task 4.4**: Enhance `src/jobs/handlers/notification-retry.ts` Email Sender.
-  - Resolve email recipient from `user.email` or fallback to `notification.payload.customerEmail` for guest customers.
-  - Render HTML email bodies using `renderDriverStatusEmail()`.
-  - Retain exponential backoff retry for failed email deliveries.
+- [x] **Task 4.3**: Implement Dual-Channel Record Creation in `outbox-dispatch.ts`.
+  - For registered customer (`customer.accountId != null`): creates `Notification` (InApp) + `NotificationDelivery` (`channel: 'InApp'`) + `NotificationDelivery` (`channel: 'Email'`).
+  - For guest customer: directly sends milestone email via `nodemailerAdapter.send()` with automatic backoff retry on failure.
+  - *File*: `src/jobs/handlers/outbox-dispatch.ts`, `src/modules/notifications/notifications.service.ts`
+- [x] **Task 4.4**: Enhance `src/jobs/handlers/notification-retry.ts` Email Sender.
+  - Resolves recipient email from `user.email` or `notification.payload.customerEmail`.
+  - Renders HTML and plain-text email bodies using `renderDriverStatusEmail()`.
+  - Retains exponential backoff retry for failed email deliveries.
+  - *File*: `src/jobs/handlers/notification-retry.ts`
 
 ---
 

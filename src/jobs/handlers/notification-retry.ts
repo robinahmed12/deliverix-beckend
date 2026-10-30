@@ -1,5 +1,6 @@
 import type { Tx, JobHandler, ClaimableRow } from "../lib/job-runner.js";
 import { nodemailerAdapter } from "../../integrations/email/nodemailer.adapter.js";
+import { renderDriverStatusEmail } from "../../integrations/email/templates/index.js";
 import { logger } from "../../shared/utils/logger.js";
 
 interface NotificationDeliveryRow extends ClaimableRow {
@@ -31,7 +32,7 @@ export const notificationRetryJob: JobHandler<NotificationDeliveryRow> = {
   async claim(tx, row) {
     const notification = await tx.notification.findUnique({
       where: { id: row.notificationId },
-      select: { userId: true, title: true, message: true, channel: true },
+      select: { userId: true, title: true, message: true, channel: true, type: true, orderId: true, payload: true },
     });
     if (!notification) {
       await tx.notificationDelivery.update({
@@ -56,9 +57,13 @@ export const notificationRetryJob: JobHandler<NotificationDeliveryRow> = {
       try {
         const user = await tx.user.findUnique({
           where: { id: notification.userId },
-          select: { email: true },
+          select: { email: true, name: true },
         });
-        if (!user) {
+
+        const payload = (notification.payload ?? {}) as Record<string, unknown>;
+        const recipientEmail = (typeof payload.customerEmail === "string" ? payload.customerEmail : null) ?? user?.email ?? null;
+
+        if (!recipientEmail) {
           await tx.notificationDelivery.update({
             where: { id: row.id },
             data: { status: "DeadLettered", attempts, lastError: "user has no email" },
@@ -66,10 +71,38 @@ export const notificationRetryJob: JobHandler<NotificationDeliveryRow> = {
           return;
         }
 
+        const customerName = (typeof payload.customerName === "string" ? payload.customerName : null) ?? user?.name ?? "Customer";
+        const orderNumber = typeof payload.orderNumber === "string" ? payload.orderNumber : "";
+        const driverInfo = payload.driverInfo as { name?: string; driverCode?: string; phone?: string } | undefined;
+
+        const rendered = renderDriverStatusEmail(notification.type, {
+          customerName,
+          orderNumber,
+          driverName: driverInfo?.name,
+          driverCode: driverInfo?.driverCode,
+          contactPhone: driverInfo?.phone,
+          deliveryAddress: typeof payload.deliveryAddress === "string" ? payload.deliveryAddress : undefined,
+          deliveryWindow: typeof payload.deliveryWindow === "string" ? payload.deliveryWindow : undefined,
+          pickupTime: typeof payload.pickedUpAt === "string" ? payload.pickedUpAt : undefined,
+          deliveredAt: typeof payload.deliveredAt === "string" ? payload.deliveredAt : undefined,
+          recipientName: typeof payload.recipientName === "string" ? payload.recipientName : undefined,
+          proofType: typeof payload.proofType === "string" ? payload.proofType : undefined,
+          proofUrl: typeof payload.proofUrl === "string" ? payload.proofUrl : undefined,
+          reasonCode: typeof payload.reasonCode === "string" ? payload.reasonCode : undefined,
+          reasonText: typeof payload.reasonText === "string" ? payload.reasonText : undefined,
+          attemptNumber: typeof payload.attemptNumber === "number" ? payload.attemptNumber : undefined,
+          trackingUrl: `/tracking/${orderNumber || notification.orderId || ""}`,
+        });
+
+        const subject = rendered ? rendered.subject : notification.title;
+        const html = rendered ? rendered.html : notification.message;
+        const text = rendered ? rendered.text : notification.message;
+
         const result = await emailAdapter.send({
-          to: user.email,
-          subject: notification.title,
-          html: notification.message,
+          to: recipientEmail,
+          subject,
+          html,
+          text,
         });
 
         await tx.notificationDelivery.update({
@@ -102,12 +135,12 @@ export const notificationRetryJob: JobHandler<NotificationDeliveryRow> = {
   },
 };
 
-interface NotificationRetrySettings {
+interface NotificationSettings {
   maxAttempts: number;
   backoffBaseMs: number;
 }
 
-async function loadSettings(tx: Tx): Promise<NotificationRetrySettings> {
+async function loadSettings(tx: Tx): Promise<NotificationSettings> {
   const maxSetting = await tx.systemSetting.findUnique({ where: { key: "notification.max_retry_attempts" } });
   const backoffSetting = await tx.systemSetting.findUnique({ where: { key: "notification.retry_backoff_base_ms" } });
   const maxAttempts = Number(maxSetting?.value ?? 5);

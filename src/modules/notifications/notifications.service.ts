@@ -118,7 +118,7 @@ export class NotificationsService {
   async createFromOutbox(
     tx: Tx,
     event: { id: string; eventType: string; aggregateType: string; aggregateId: string; payload: Prisma.JsonValue },
-    target: { userId: string; orderId: string | null; type: string; title: string; message: string },
+    target: { userId: string; orderId: string | null; type: string; title: string; message: string; payload?: Record<string, unknown> },
   ): Promise<{ id: string } | null> {
     const payloadData = (event.payload ?? {}) as Record<string, unknown>;
 
@@ -143,6 +143,7 @@ export class NotificationsService {
         payload: {
           outboxEventId: event.id,
           ...payloadData,
+          ...(target.payload ?? {}),
         } as Prisma.InputJsonValue,
       },
     });
