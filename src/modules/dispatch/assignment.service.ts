@@ -186,7 +186,7 @@ export class AssignmentService {
       await lockOrder(tx, current.orderId);
       await lockDriver(tx, current.driverId);
 
-      const order = await tx.deliveryOrder.findUnique({ where: { id: current.orderId }, select: { id: true, status: true } });
+      const order = await tx.deliveryOrder.findUnique({ where: { id: current.orderId }, select: { id: true, status: true, orderNumber: true, customerId: true } });
       if (!order || order.status !== "ReadyForPickup") {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Order is no longer ready for assignment");
       }
@@ -227,7 +227,14 @@ export class AssignmentService {
           eventVersion: "1.0",
           aggregateType: "assignment",
           aggregateId: id,
-          payload: { assignmentId: id, orderId: current.orderId, driverId: current.driverId } as unknown as Prisma.InputJsonValue,
+          payload: {
+            assignmentId: id,
+            orderId: current.orderId,
+            orderNumber: order.orderNumber,
+            customerId: order.customerId,
+            driverId: current.driverId,
+            acceptedAt: new Date().toISOString(),
+          } as unknown as Prisma.InputJsonValue,
         },
       });
 

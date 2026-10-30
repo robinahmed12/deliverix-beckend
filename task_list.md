@@ -10,14 +10,14 @@ This task list tracks the step-by-step implementation of the **Driver Journey Li
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Phase 1: Driver Availability & State** | 3 | 3 | 0 | 0 | 100% |
 | **Phase 2: Email Integration & Templates** | 7 | 7 | 0 | 0 | 100% |
-| **Phase 3: Outbox Payload Enrichment** | 6 | 0 | 2 | 4 | 15% |
+| **Phase 3: Outbox Payload Enrichment** | 6 | 6 | 0 | 0 | 100% |
 | **Phase 4: Dual-Channel Notification Engine** | 4 | 0 | 0 | 4 | 0% |
 | **Phase 5: Automated Verification & Tests** | 4 | 0 | 0 | 4 | 0% |
 | **Phase 6: Manual Verification & E2E Validation** | 3 | 0 | 0 | 3 | 0% |
-| **Total** | **27** | **10** | **2** | **15** | **~44%** |
+| **Total** | **27** | **16** | **0** | **11** | **~59%** |
 
 ```
-Progress: [█████████▒▒▒▒▒▒▒▒▒▒▒] 44% (12 / 27 subtasks credited)
+Progress: [████████████▒▒▒▒▒▒▒▒] 59% (16 / 27 subtasks credited)
 ```
 
 ---
@@ -68,42 +68,33 @@ Progress: [█████████▒▒▒▒▒▒▒▒▒▒▒] 44% (12
 - [x] **Task 2.7**: Implement central template registry and dispatcher helper in `src/integrations/email/templates/index.ts`.
   - Provides typed `renderDriverStatusEmail(eventType, data)` returning `{ subject, html, text }`.
   - *File*: `src/integrations/email/templates/index.ts`
-  - Content: Failure reason code/text, customer support contact, rescheduling instructions.
-- [ ] **Task 2.7**: Implement central template registry and dispatcher helper in `src/integrations/email/templates/index.ts`.
-  - Provides typed `renderDriverStatusEmail(eventType, data)` returning `{ subject, html, text }`.
 
 ---
 
 ## Phase 3: Outbox Payload Enrichment in Domain Services
 
-> Status: **In Progress (~15%)**
+> Status: **Completed (100%)**
 >
 > Requirements: `TXN-003` (domain mutation + outbox write committed atomically in one PostgreSQL transaction).
 
-- [ ] **Task 3.1**: Enrich `AssignmentService.accept()` outbox payload.
-  - *Current*: `{ assignmentId, orderId, driverId }`
-  - *Target*: Add `orderNumber`, `customerId`, `acceptedAt`.
+- [x] **Task 3.1**: Enrich `AssignmentService.accept()` outbox payload.
   - *File*: `src/modules/dispatch/assignment.service.ts`
-- [ ] **Task 3.2**: Enrich `DeliveryService.pickup()` outbox payload.
-  - *Current*: `{ orderId, driverId, attemptId }`
-  - *Target*: Add `orderNumber`, `customerId`, `pickedUpAt`.
+  - Includes `assignmentId`, `orderId`, `orderNumber`, `customerId`, `driverId`, `acceptedAt`.
+- [x] **Task 3.2**: Enrich `DeliveryService.pickup()` outbox payload.
   - *File*: `src/modules/delivery/delivery.service.ts`
-- [ ] **Task 3.3**: Enrich `DeliveryService.inTransit()` outbox payload.
-  - *Current*: `{ orderId }`
-  - *Target*: Add `orderNumber`, `customerId`, `driverId`.
+  - Includes `orderId`, `orderNumber`, `customerId`, `driverId`, `attemptId`, `pickedUpAt`.
+- [x] **Task 3.3**: Enrich `DeliveryService.inTransit()` outbox payload.
   - *File*: `src/modules/delivery/delivery.service.ts`
-- [ ] **Task 3.4**: Enrich `DeliveryService.outForDelivery()` outbox payload.
-  - *Current*: `{ orderId }`
-  - *Target*: Add `orderNumber`, `customerId`, `driverId`.
+  - Includes `orderId`, `orderNumber`, `customerId`, `driverId`.
+- [x] **Task 3.4**: Enrich `DeliveryService.outForDelivery()` outbox payload.
   - *File*: `src/modules/delivery/delivery.service.ts`
-- [ ] **Task 3.5**: Enrich `DeliveryService.deliver()` outbox payload.
-  - *Current*: `{ orderId, attemptId, driverId }`
-  - *Target*: Add `orderNumber`, `customerId`, `podSummary`, `deliveredAt`.
+  - Includes `orderId`, `orderNumber`, `customerId`, `driverId`.
+- [x] **Task 3.5**: Enrich `DeliveryService.deliver()` outbox payload.
   - *File*: `src/modules/delivery/delivery.service.ts`
-- [ ] **Task 3.6**: Enrich `DeliveryService.fail()` outbox payload.
-  - *Current*: `{ orderId, reasonCode, attemptId }`
-  - *Target*: Add `orderNumber`, `customerId`, `driverId`, `reasonText`.
+  - Includes `orderId`, `orderNumber`, `customerId`, `driverId`, `attemptId`, `deliveredAt`.
+- [x] **Task 3.6**: Enrich `DeliveryService.fail()` outbox payload.
   - *File*: `src/modules/delivery/delivery.service.ts`
+  - Includes `orderId`, `orderNumber`, `customerId`, `driverId`, `attemptId`, `reasonCode`, `reasonText`.
 
 ---
 

@@ -296,7 +296,19 @@ export class DeliveryService {
       });
 
       await recordTransition(tx, orderId, "Assigned", "PickedUp", auth.userId, meta, updated.version, "DRIVER_PICKUP");
-      await emitOutbox(tx, { eventType: "order.picked_up", aggregateType: "order", aggregateId: orderId, payload: { orderId, driverId: driver.id, attemptId: attempt.id } });
+      await emitOutbox(tx, {
+        eventType: "order.picked_up",
+        aggregateType: "order",
+        aggregateId: orderId,
+        payload: {
+          orderId,
+          orderNumber: current.orderNumber,
+          customerId: current.customerId,
+          driverId: driver.id,
+          attemptId: attempt.id,
+          pickedUpAt: new Date().toISOString(),
+        },
+      });
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.pickup", resourceType: "order", resourceId: orderId, before: { status: current.status }, after: { status: "PickedUp" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
@@ -316,7 +328,7 @@ export class DeliveryService {
       if (order.status !== "PickedUp") {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only PickedUp orders can move to InTransit");
       }
-      await loadActiveAssignment(tx, orderId, auth);
+      const { driver } = await loadActiveAssignment(tx, orderId, auth);
       await loadInProgressAttempt(tx, orderId);
 
       const updated = await tx.deliveryOrder.update({
@@ -325,7 +337,17 @@ export class DeliveryService {
       });
 
       await recordTransition(tx, orderId, "PickedUp", "InTransit", auth.userId, meta, updated.version, "DRIVER_TRANSIT");
-      await emitOutbox(tx, { eventType: "order.in_transit", aggregateType: "order", aggregateId: orderId, payload: { orderId } });
+      await emitOutbox(tx, {
+        eventType: "order.in_transit",
+        aggregateType: "order",
+        aggregateId: orderId,
+        payload: {
+          orderId,
+          orderNumber: order.orderNumber,
+          customerId: order.customerId,
+          driverId: driver.id,
+        },
+      });
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.in_transit", resourceType: "order", resourceId: orderId, before: { status: "PickedUp" }, after: { status: "InTransit" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
@@ -344,7 +366,7 @@ export class DeliveryService {
       if (order.status !== "InTransit") {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only InTransit orders can move to OutForDelivery");
       }
-      await loadActiveAssignment(tx, orderId, auth);
+      const { driver } = await loadActiveAssignment(tx, orderId, auth);
       await loadInProgressAttempt(tx, orderId);
 
       const updated = await tx.deliveryOrder.update({
@@ -353,7 +375,17 @@ export class DeliveryService {
       });
 
       await recordTransition(tx, orderId, "InTransit", "OutForDelivery", auth.userId, meta, updated.version, "DRIVER_OUT_FOR_DELIVERY");
-      await emitOutbox(tx, { eventType: "order.out_for_delivery", aggregateType: "order", aggregateId: orderId, payload: { orderId } });
+      await emitOutbox(tx, {
+        eventType: "order.out_for_delivery",
+        aggregateType: "order",
+        aggregateId: orderId,
+        payload: {
+          orderId,
+          orderNumber: order.orderNumber,
+          customerId: order.customerId,
+          driverId: driver.id,
+        },
+      });
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.out_for_delivery", resourceType: "order", resourceId: orderId, before: { status: "InTransit" }, after: { status: "OutForDelivery" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
@@ -413,7 +445,19 @@ export class DeliveryService {
 
       await recordCustody(tx, orderId, "Driver", driver.id, "Facility", "SYSTEM", auth.userId, "DELIVERY_COMPLETE", "Package delivered to recipient");
       await recordTransition(tx, orderId, "OutForDelivery", "Delivered", auth.userId, meta, updated.version, "DELIVERY_COMPLETED");
-      await emitOutbox(tx, { eventType: "order.delivered", aggregateType: "order", aggregateId: orderId, payload: { orderId, attemptId: attempt.id, driverId: driver.id } });
+      await emitOutbox(tx, {
+        eventType: "order.delivered",
+        aggregateType: "order",
+        aggregateId: orderId,
+        payload: {
+          orderId,
+          orderNumber: order.orderNumber,
+          customerId: order.customerId,
+          driverId: driver.id,
+          attemptId: attempt.id,
+          deliveredAt: new Date().toISOString(),
+        },
+      });
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.completed", resourceType: "order", resourceId: orderId, before: { status: order.status }, after: { status: "Delivered" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       // The delivery episode is over: hand the driver back to the pool so they
@@ -445,7 +489,7 @@ export class DeliveryService {
       if (!DELIVERING_STATES.has(order.status)) {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only PickedUp/InTransit/OutForDelivery orders can be marked Failed");
       }
-      await loadActiveAssignment(tx, orderId, auth);
+      const { driver } = await loadActiveAssignment(tx, orderId, auth);
       const attempt = await loadInProgressAttempt(tx, orderId);
 
       await tx.deliveryAttempt.update({
@@ -465,7 +509,20 @@ export class DeliveryService {
       });
 
       await recordTransition(tx, orderId, order.status, "Failed", auth.userId, meta, updated.version, data.reasonCode, data.reasonText);
-      await emitOutbox(tx, { eventType: "order.failed", aggregateType: "order", aggregateId: orderId, payload: { orderId, reasonCode: data.reasonCode, attemptId: attempt.id } });
+      await emitOutbox(tx, {
+        eventType: "order.failed",
+        aggregateType: "order",
+        aggregateId: orderId,
+        payload: {
+          orderId,
+          orderNumber: order.orderNumber,
+          customerId: order.customerId,
+          driverId: driver.id,
+          attemptId: attempt.id,
+          reasonCode: data.reasonCode,
+          reasonText: data.reasonText ?? null,
+        },
+      });
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.failed", resourceType: "order", resourceId: orderId, before: { status: order.status }, after: { status: "Failed", reasonCode: data.reasonCode }, reason: data.reasonCode, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
@@ -487,7 +544,7 @@ export class DeliveryService {
       if (order.status !== "Failed") {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only Failed orders can be retried");
       }
-      await loadActiveAssignment(tx, orderId, auth);
+      const { driver } = await loadActiveAssignment(tx, orderId, auth);
 
       const attemptNum = await nextAttemptNumber(tx, orderId);
       if (attemptNum > maxAttempts) {
