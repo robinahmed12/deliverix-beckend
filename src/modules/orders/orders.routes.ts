@@ -12,6 +12,7 @@ import {
   listOrdersQuerySchema,
   createNoteSchema,
   listNotesQuerySchema,
+  failOrderSchema,
 } from "./orders.schemas.js";
 
 const router = Router();
@@ -91,6 +92,15 @@ router.post(
   idempotent(),
   validate({ body: cancelOrderSchema }),
   controller.cancel.bind(controller),
+);
+
+router.post(
+  "/:id/fail",
+  authenticate,
+  authorize("deliveries.execute"),
+  idempotent(),
+  validate({ body: failOrderSchema }),
+  controller.fail.bind(controller),
 );
 
 export default router;

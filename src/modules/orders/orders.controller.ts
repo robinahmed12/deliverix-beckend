@@ -1,7 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { OrdersService } from "./orders.service.js";
+import { DeliveryService } from "../delivery/delivery.service.js";
 
 const ordersService = new OrdersService();
+const deliveryService = new DeliveryService();
 
 function auth(req: Request) {
   return { userId: req.auth!.userId, roles: req.auth!.roles };
@@ -109,6 +111,16 @@ export class OrdersController {
     try {
       const result = await ordersService.createNote(str(req.params.id), req.body.note, req.auth!.userId, meta(req));
       res.status(201).json({ data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async fail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orderId = str(req.params.id ?? req.params.orderId);
+      const result = await deliveryService.fail(orderId, req.body, auth(req), meta(req));
+      res.status(200).json({ data: result });
     } catch (err) {
       next(err);
     }

@@ -85,3 +85,8 @@ export const listNotesQuerySchema = z.object({
   cursor: z.string().optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });
+
+export const failOrderSchema = z.object({
+  reasonCode: z.string().min(1).max(100),
+  reasonText: z.string().min(1).max(500).optional().or(z.literal(null)),
+});

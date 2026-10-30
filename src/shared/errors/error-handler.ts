@@ -76,6 +76,18 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     return;
   }
 
+  if (error.code === "P2028") {
+    res.status(503).json({
+      type: "about:blank",
+      title: titleFor(503),
+      status: 503,
+      detail: "Database transaction timed out. Please retry.",
+      code: "DEPENDENCY_UNAVAILABLE" satisfies ErrorCode,
+      requestId,
+    });
+    return;
+  }
+
   // body-parser reports malformed JSON as `type: "entity.parse.failed"`
   // (outbox: it must surface as 400, never as an unhandled 500).
   if ((error as { type?: string }).type === "entity.parse.failed") {

@@ -1,4 +1,4 @@
-import { prisma } from "../../shared/utils/prisma.js";
+import { prisma, DEFAULT_TX_OPTIONS } from "../../shared/utils/prisma.js";
 import { writeAudit } from "../../shared/utils/audit.js";
 import { releaseDriverIfIdle } from "../../shared/utils/driver-state.js";
 import { AppError } from "../../shared/errors/app-error.js";
@@ -229,18 +229,16 @@ async function validateProofEvidence(
 
   if (proofPolicy.requiresPhoto) {
     const photoProofs = proofs.filter((p) => p.evidenceType === "Photo");
-    const validPhotos = await Promise.all(
-      photoProofs.map(async (p) => {
-        if (!p.fileId) return false;
-        const file = await tx.fileObject.findUnique({ where: { id: p.fileId } });
-        return file && file.status === "Accepted";
-      }),
-    );
-    const photoCount = validPhotos.filter(Boolean).length;
+    const fileIds = photoProofs.map((p) => p.fileId).filter((id): id is string => Boolean(id));
+    const files = fileIds.length > 0
+      ? await tx.fileObject.findMany({ where: { id: { in: fileIds } } })
+      : [];
+    const acceptedIds = new Set(files.filter((f) => f.status === "Accepted").map((f) => f.id));
+    const photoCount = photoProofs.filter((p) => p.fileId && acceptedIds.has(p.fileId)).length;
     if (photoCount < proofPolicy.minPhotos) {
       const anyPending = photoProofs.some((p) => {
-        const file = photoProofs.find((pp) => pp.fileId === p.fileId);
-        return file !== undefined;
+        const file = files.find((f) => f.id === p.fileId);
+        return file && (file.status === "Scanning" || file.status === "Uploaded");
       });
       if (anyPending) return { ok: false, error: "PROOF_NOT_READY", proofIds: [] };
       return { ok: false, error: "PROOF_REQUIRED", proofIds: [] };
@@ -260,6 +258,15 @@ async function validateProofEvidence(
 
   return { ok: true, proofIds: proofs.filter((p) => p.status === "Pending").map((p) => p.id) };
 }
+
+const DEFAULT_FAILURE_REASONS: Record<string, { label: string; requiresText: boolean }> = {
+  RECIPIENT_UNAVAILABLE: { label: "Recipient unavailable / not at delivery location", requiresText: false },
+  INCORRECT_ADDRESS: { label: "Address incorrect, incomplete, or unlocatable", requiresText: false },
+  CUSTOMER_REFUSED: { label: "Customer refused delivery / package declined", requiresText: true },
+  ACCESS_DENIED: { label: "Access denied / locked gate / security restriction", requiresText: false },
+  SAFETY_HAZARD: { label: "Severe weather, unsafe conditions, or animal hazard", requiresText: true },
+  OTHER: { label: "Other operational exception", requiresText: true },
+};
 
 export class DeliveryService {
   async pickup(
@@ -312,7 +319,7 @@ export class DeliveryService {
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.pickup", resourceType: "order", resourceId: orderId, before: { status: current.status }, after: { status: "PickedUp" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
 
     return orderDto(result as unknown as Record<string, unknown>);
   }
@@ -351,7 +358,7 @@ export class DeliveryService {
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.in_transit", resourceType: "order", resourceId: orderId, before: { status: "PickedUp" }, after: { status: "InTransit" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 
@@ -389,7 +396,7 @@ export class DeliveryService {
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.out_for_delivery", resourceType: "order", resourceId: orderId, before: { status: "InTransit" }, after: { status: "OutForDelivery" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 
@@ -465,7 +472,7 @@ export class DeliveryService {
       await releaseDriverIfIdle(tx, driver.id, "DELIVERY_COMPLETED", auth.userId);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 
@@ -475,7 +482,20 @@ export class DeliveryService {
     auth: { userId: string; roles: string[] },
     meta: { requestId?: string; ip?: string },
   ) {
-    const failureReason = await prisma.deliveryFailureReason.findUnique({ where: { code: data.reasonCode } });
+    let failureReason = await prisma.deliveryFailureReason.findUnique({ where: { code: data.reasonCode } });
+    const fallbackDef = DEFAULT_FAILURE_REASONS[data.reasonCode];
+    if (!failureReason && fallbackDef) {
+      failureReason = await prisma.deliveryFailureReason.upsert({
+        where: { code: data.reasonCode },
+        update: {},
+        create: {
+          code: data.reasonCode,
+          label: fallbackDef.label,
+          requiresText: fallbackDef.requiresText,
+          active: true,
+        },
+      });
+    }
     if (!failureReason || !failureReason.active) {
       throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "Invalid or inactive failure reason code");
     }
@@ -489,7 +509,7 @@ export class DeliveryService {
       if (!DELIVERING_STATES.has(order.status)) {
         throw new AppError(409, ErrorCodes.ORDER_STATE_CONFLICT, "Only PickedUp/InTransit/OutForDelivery orders can be marked Failed");
       }
-      const { driver } = await loadActiveAssignment(tx, orderId, auth);
+      const { assignment, driver } = await loadActiveAssignment(tx, orderId, auth);
       const attempt = await loadInProgressAttempt(tx, orderId);
 
       await tx.deliveryAttempt.update({
@@ -499,6 +519,17 @@ export class DeliveryService {
           endedAt: new Date(),
           failureReasonId: failureReason.id,
           failureReasonText: data.reasonText ?? null,
+          version: { increment: 1 },
+        },
+      });
+
+      await tx.deliveryAssignment.update({
+        where: { id: assignment.id },
+        data: {
+          status: "Released",
+          releasedAt: new Date(),
+          reasonCode: data.reasonCode,
+          reasonText: data.reasonText ?? null,
           version: { increment: 1 },
         },
       });
@@ -525,8 +556,10 @@ export class DeliveryService {
       });
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.failed", resourceType: "order", resourceId: orderId, before: { status: order.status }, after: { status: "Failed", reasonCode: data.reasonCode }, reason: data.reasonCode, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
+      await releaseDriverIfIdle(tx, driver.id, "DELIVERY_FAILED", auth.userId);
+
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 
@@ -565,7 +598,7 @@ export class DeliveryService {
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.retry", resourceType: "order", resourceId: orderId, before: { status: "Failed" }, after: { status: "InTransit", attemptNumber: attemptNum }, reason: data.reasonCode ?? null, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 
@@ -617,7 +650,7 @@ export class DeliveryService {
       await writeAudit({ actorId, actorType: "user", action: "delivery.rescheduled", resourceType: "order", resourceId: orderId, after: { rescheduledAtStart: data.rescheduledAtStart, rescheduledAtEnd: data.rescheduledAtEnd, reasonCode: data.reasonCode }, reason: data.reasonCode, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 
@@ -662,7 +695,7 @@ export class DeliveryService {
       await writeAudit({ actorId, actorType: "user", action: "delivery.return_started", resourceType: "order", resourceId: orderId, before: { status: order.status }, after: { status: "ReturnInProgress" }, reason: data.reasonCode, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 
@@ -700,7 +733,7 @@ export class DeliveryService {
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.return_proof", resourceType: "order", resourceId: orderId, after: { evidenceId: data.fileId }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
 
     return { id: result.id, orderId: result.orderId, evidenceId: result.evidenceId, version: result.version };
   }
@@ -751,7 +784,7 @@ export class DeliveryService {
       await writeAudit({ actorId: auth.userId, actorType: "user", action: "delivery.return_confirmed", resourceType: "order", resourceId: orderId, before: { status: order.status }, after: { status: "Returned" }, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 
@@ -782,7 +815,7 @@ export class DeliveryService {
       await writeAudit({ actorId, actorType: "user", action: "delivery.pickup_receipt_confirmed", resourceType: "order", resourceId: orderId, before: { status: order.status }, after: { status: "ReadyForPickup" }, reason: data.reasonCode, requestId: meta.requestId ?? null, ip: meta.ip ?? null }, tx);
 
       return updated;
-    });
+    }, DEFAULT_TX_OPTIONS);
     return orderDto(result as unknown as Record<string, unknown>);
   }
 

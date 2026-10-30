@@ -54,6 +54,7 @@ export function createApp(): express.Express {
   app.use("/api/v1/zones", zonesRouter);
   app.use("/api/v1/service-types", serviceTypesRouter);
   app.use("/api/v1/config", configRouter);
+  app.use("/api/v1", configRouter);
   app.use("/api/v1/drivers", driversRouter);
   app.use("/api/v1/vehicles", vehiclesRouter);
   app.use("/api/v1", assignmentRouter);

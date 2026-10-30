@@ -128,15 +128,47 @@ async function seedAdmin() {
   void user;
 }
 
+
+const DEFAULT_FAILURE_REASONS = [
+  { code: "RECIPIENT_UNAVAILABLE", label: "Recipient unavailable / not at delivery location", requiresText: false },
+  { code: "INCORRECT_ADDRESS", label: "Address incorrect, incomplete, or unlocatable", requiresText: false },
+  { code: "CUSTOMER_REFUSED", label: "Customer refused delivery / package declined", requiresText: true },
+  { code: "ACCESS_DENIED", label: "Access denied / locked gate / security restriction", requiresText: false },
+  { code: "SAFETY_HAZARD", label: "Severe weather, unsafe conditions, or animal hazard", requiresText: true },
+  { code: "OTHER", label: "Other operational exception", requiresText: true },
+];
+
+async function seedFailureReasons() {
+  for (const reason of DEFAULT_FAILURE_REASONS) {
+    await prisma.deliveryFailureReason.upsert({
+      where: { code: reason.code },
+      update: {},
+      create: {
+        code: reason.code,
+        label: reason.label,
+        requiresText: reason.requiresText,
+        active: true,
+      },
+    });
+  }
+}
+
 async function main() {
   await seedPermissions();
   await seedRoles();
   await seedAdmin();
+  await seedFailureReasons();
 }
 
 main()
+  .then(() => {
+    console.log("Database seeded successfully!");
+  })
   .catch((err) => {
     console.error(err);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+    process.exit(process.exitCode ?? 0);
+  });
