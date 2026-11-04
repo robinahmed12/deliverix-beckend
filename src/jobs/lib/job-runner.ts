@@ -52,7 +52,7 @@ export class JobRunner {
           }
           return rows.length;
         },
-        { timeout: 60_000 },
+        { timeout: 60_000, maxWait: 10_000 },
       );
       if (claimed > 0) {
         logger.debug({ job: handler.name, claimed, traceId }, "job run complete");
