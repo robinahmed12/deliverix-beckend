@@ -42,6 +42,8 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_MODEL: z.string().default("meta-llama/llama-3.3-70b-instruct:free"),
   /**
    * Stand-in for the external malware scanner that normally calls
    * `POST /files/:id/scan-result`. When enabled, a background job flips files

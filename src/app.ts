@@ -26,6 +26,7 @@ import filesRouter from "./modules/files/files.routes.js";
 import notificationsRouter from "./modules/notifications/notifications.routes.js";
 import reportsRouter from "./modules/reports/reports.routes.js";
 import auditRouter from "./modules/audit/audit.routes.js";
+import supportRouter from "./modules/support-rag/support-rag.routes.js";
 
 export function createApp(): express.Express {
   const app = express();
@@ -65,6 +66,7 @@ export function createApp(): express.Express {
   app.use("/api/v1/notifications", notificationsRouter);
   app.use("/api/v1/reports", reportsRouter);
   app.use("/api/v1/audit-logs", auditRouter);
+  app.use("/api/v1/support", supportRouter);
   app.use("/api/v1", (_req, res) => {
     res.status(404).json({
       type: "about:blank",
