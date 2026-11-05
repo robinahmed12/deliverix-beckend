@@ -82,7 +82,7 @@ export class OrdersController {
 
   async cancel(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const result = await ordersService.cancel(str(req.params.id), req.body, req.auth!.userId, meta(req));
+      const result = await ordersService.cancel(str(req.params.id), req.body, req.auth!.userId, meta(req), auth(req));
       res.status(200).json({ data: result });
     } catch (err) {
       next(err);

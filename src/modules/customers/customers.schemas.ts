@@ -39,3 +39,18 @@ export const addressParamsSchema = z.object({
   customerId: z.string().cuid(),
   addressId: z.string().cuid().optional(),
 });
+
+export const updateMeProfileSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  phone: z.string().max(30).optional().or(z.literal(null)),
+});
+
+export const linkAccountSchema = z.object({
+  customerId: z.string().cuid().optional(),
+});
+
+export const customerOrdersQuerySchema = z.object({
+  cursor: z.string().optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.string().optional(),
+});

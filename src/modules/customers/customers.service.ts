@@ -411,4 +411,232 @@ export class CustomersService {
       );
     });
   }
+
+  async getMe(userId: string) {
+    const customer = await prisma.customer.findUnique({
+      where: { accountId: userId },
+      include: {
+        addresses: {
+          where: { deletedAt: null },
+          orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+        },
+      },
+    });
+
+    if (!customer) {
+      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
+    }
+
+    const [activeOrderCount, totalOrderCount] = await Promise.all([
+      prisma.deliveryOrder.count({
+        where: {
+          customerId: customer.id,
+          status: { in: ["Pending", "ReadyForPickup", "Assigned", "PickedUp", "InTransit", "OutForDelivery"] },
+        },
+      }),
+      prisma.deliveryOrder.count({
+        where: { customerId: customer.id },
+      }),
+    ]);
+
+    return {
+      ...toCustomerDto(customer),
+      addresses: customer.addresses.map((a) => ({
+        id: a.id,
+        label: a.label,
+        line1: a.line1,
+        line2: a.line2,
+        city: a.city,
+        region: a.region,
+        postalCode: a.postalCode,
+        country: a.country,
+        latitude: a.latitude,
+        longitude: a.longitude,
+        isDefault: a.isDefault,
+        version: a.version,
+      })),
+      stats: {
+        activeOrderCount,
+        totalOrderCount,
+      },
+    };
+  }
+
+  async updateMe(
+    userId: string,
+    data: { name?: string; phone?: string | null },
+    meta: { requestId?: string; ip?: string },
+  ) {
+    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
+    if (!customer) {
+      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
+    }
+
+    const phoneNormalized = normalizePhone(data.phone ?? undefined);
+    if (phoneNormalized && phoneNormalized !== customer.phoneNormalized) {
+      const exists = await prisma.customer.findUnique({ where: { phoneNormalized } });
+      if (exists && exists.id !== customer.id) {
+        throw new AppError(409, ErrorCodes.VALIDATION_FAILED, "A customer with this phone already exists");
+      }
+    }
+
+    const updateData: {
+      name?: string;
+      phone?: string | null;
+      phoneNormalized?: string | null;
+      version: { increment: number };
+    } = { version: { increment: 1 } };
+
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.phone !== undefined) {
+      updateData.phone = data.phone;
+      updateData.phoneNormalized = phoneNormalized;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.customer.update({
+        where: { id: customer.id },
+        data: updateData,
+      });
+
+      await writeAudit(
+        {
+          actorId: userId,
+          actorType: "user",
+          action: "customer.profile_updated",
+          resourceType: "customer",
+          resourceId: customer.id,
+          before: { name: customer.name, phone: customer.phone },
+          after: { name: result.name, phone: result.phone },
+          requestId: meta.requestId ?? null,
+          ip: meta.ip ?? null,
+        },
+        tx,
+      );
+
+      return result;
+    });
+
+    return toCustomerDto(updated);
+  }
+
+  async linkAccount(
+    userId: string,
+    userEmail: string,
+    userPhone: string | null | undefined,
+    targetCustomerId: string | undefined,
+    meta: { requestId?: string; ip?: string },
+  ) {
+    const existingLinked = await prisma.customer.findUnique({ where: { accountId: userId } });
+    if (existingLinked) {
+      if (targetCustomerId && existingLinked.id !== targetCustomerId) {
+        throw new AppError(409, ErrorCodes.VALIDATION_FAILED, "User account is already linked to a different customer profile");
+      }
+      return toCustomerDto(existingLinked);
+    }
+
+    const userEmailNorm = normalizeEmail(userEmail);
+    const userPhoneNorm = normalizePhone(userPhone ?? undefined);
+
+    let candidate = null;
+    if (targetCustomerId) {
+      candidate = await prisma.customer.findUnique({ where: { id: targetCustomerId } });
+      if (!candidate) {
+        throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "Customer profile not found");
+      }
+    } else if (userEmailNorm) {
+      candidate = await prisma.customer.findUnique({ where: { emailNormalized: userEmailNorm } });
+      if (!candidate && userPhoneNorm) {
+        candidate = await prisma.customer.findUnique({ where: { phoneNormalized: userPhoneNorm } });
+      }
+    }
+
+    if (!candidate) {
+      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No matching customer profile found for your verified email/phone");
+    }
+
+    if (candidate.accountId && candidate.accountId !== userId) {
+      throw new AppError(409, ErrorCodes.VALIDATION_FAILED, "This customer profile is already linked to another account");
+    }
+
+    const emailMatches = candidate.emailNormalized && userEmailNorm && candidate.emailNormalized === userEmailNorm;
+    const phoneMatches = candidate.phoneNormalized && userPhoneNorm && candidate.phoneNormalized === userPhoneNorm;
+
+    if (!emailMatches && !phoneMatches) {
+      throw new AppError(403, ErrorCodes.FORBIDDEN, "Contact verification failed: account email/phone does not match customer profile");
+    }
+
+    const linked = await prisma.$transaction(async (tx) => {
+      const result = await tx.customer.update({
+        where: { id: candidate.id },
+        data: {
+          accountId: userId,
+          version: { increment: 1 },
+        },
+      });
+
+      await writeAudit(
+        {
+          actorId: userId,
+          actorType: "user",
+          action: "customer.account_linked",
+          resourceType: "customer",
+          resourceId: candidate.id,
+          after: { accountId: userId },
+          requestId: meta.requestId ?? null,
+          ip: meta.ip ?? null,
+        },
+        tx,
+      );
+
+      return result;
+    });
+
+    return toCustomerDto(linked);
+  }
+
+  async listMyAddresses(userId: string) {
+    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
+    if (!customer) {
+      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
+    }
+    return this.listAddresses(customer.id);
+  }
+
+  async createMyAddress(
+    userId: string,
+    data: Parameters<CustomersService["createAddress"]>[1],
+    meta: { requestId?: string; ip?: string },
+  ) {
+    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
+    if (!customer) {
+      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
+    }
+    return this.createAddress(customer.id, data, userId, meta);
+  }
+
+  async updateMyAddress(
+    userId: string,
+    addressId: string,
+    data: Parameters<CustomersService["updateAddress"]>[2],
+    meta: { requestId?: string; ip?: string },
+  ) {
+    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
+    if (!customer) {
+      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
+    }
+    return this.updateAddress(customer.id, addressId, data, userId, meta);
+  }
+
+  async deleteMyAddress(
+    userId: string,
+    addressId: string,
+    meta: { requestId?: string; ip?: string },
+  ) {
+    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
+    if (!customer) {
+      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
+    }
+    return this.deleteAddress(customer.id, addressId, userId, meta);
+  }
 }

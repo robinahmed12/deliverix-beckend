@@ -537,10 +537,21 @@ export class OrdersService {
     data: { reasonCode: string; reasonText?: string | null },
     actorId: string,
     meta: { requestId?: string; ip?: string },
+    auth?: { userId: string; roles: string[] },
   ) {
     const order = await prisma.deliveryOrder.findUnique({ where: { id } });
     if (!order) {
       throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "Order not found");
+    }
+
+    if (auth) {
+      const isStaff = auth.roles.some((r) => ["admin", "dispatcher", "support"].includes(r));
+      if (!isStaff) {
+        const customer = await prisma.customer.findUnique({ where: { accountId: auth.userId } });
+        if (!customer || customer.id !== order.customerId) {
+          throw new AppError(403, ErrorCodes.FORBIDDEN, "Access denied");
+        }
+      }
     }
 
     if (!CANCELLABLE_STATES.has(order.status)) {

@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { CustomersService } from "./customers.service.js";
+import { customerContextService } from "./customer-context.service.js";
 
 const customersService = new CustomersService();
 
@@ -104,6 +105,87 @@ export class CustomersController {
         req.auth!.userId,
         meta(req),
       );
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async getRAGContext(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await customerContextService.buildCustomerContext(req.auth!.userId);
+      res.status(200).json({ data });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async getMe(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      res.status(200).json({ data: await customersService.getMe(req.auth!.userId) });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async updateMe(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await customersService.updateMe(req.auth!.userId, req.body, meta(req));
+      res.status(200).json({ data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async linkAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await customersService.linkAccount(
+        req.auth!.userId,
+        req.auth!.email,
+        undefined,
+        req.body?.customerId,
+        meta(req),
+      );
+      res.status(200).json({ data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async listMyAddresses(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      res.status(200).json({ data: await customersService.listMyAddresses(req.auth!.userId) });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async createMyAddress(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await customersService.createMyAddress(req.auth!.userId, req.body, meta(req));
+      res.status(201).json({ data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async updateMyAddress(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await customersService.updateMyAddress(
+        req.auth!.userId,
+        str(req.params.addressId),
+        req.body,
+        meta(req),
+      );
+      res.status(200).json({ data: result });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async deleteMyAddress(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await customersService.deleteMyAddress(req.auth!.userId, str(req.params.addressId), meta(req));
       res.status(204).send();
     } catch (err) {
       next(err);

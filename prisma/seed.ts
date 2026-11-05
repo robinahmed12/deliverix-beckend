@@ -35,6 +35,11 @@ const PERMISSIONS = [
   "reports.view",
   "audit.view",
   "config.manage",
+  "customers.me.view",
+  "customers.me.update",
+  "customers.me.addresses",
+  "orders.me.cancel",
+  "orders.me.reschedule",
 ] as const;
 
 const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
@@ -63,7 +68,15 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "proof.view",
     "notifications.view",
   ],
-  customer: ["orders.view"],
+  customer: [
+    "orders.view",
+    "customers.me.view",
+    "customers.me.update",
+    "customers.me.addresses",
+    "orders.me.cancel",
+    "orders.me.reschedule",
+    "notifications.view",
+  ],
   support: [
     "customers.view",
     "orders.view",

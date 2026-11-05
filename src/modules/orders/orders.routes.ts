@@ -88,7 +88,7 @@ router.post(
 router.post(
   "/:id/cancel",
   authenticate,
-  authorize("orders.cancel"),
+  authorize("orders.cancel", "orders.me.cancel"),
   idempotent(),
   validate({ body: cancelOrderSchema }),
   controller.cancel.bind(controller),
