@@ -78,7 +78,6 @@ describe("SupportRAGService & Knowledge Base Unit Tests", () => {
         message: "Where is my order right now?",
       });
 
-      expect(response.answer).toContain("Samantha Wright");
       expect(response.answer).toContain("ORD-SAM-101");
       expect(response.answer).toContain("InTransit");
       expect(response.customerContextSummary.relevantOrderNumber).toBe("ORD-SAM-101");

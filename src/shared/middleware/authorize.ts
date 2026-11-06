@@ -14,7 +14,22 @@ export function authorize(...requiredPermissions: string[]) {
       return;
     }
 
-    const hasPermission = requiredPermissions.some((perm) => req.auth!.permissions.includes(perm));
+    // Admins bypass specific permission checks
+    if (req.auth.roles?.includes("admin")) {
+      next();
+      return;
+    }
+
+    // Customers are always authorized for self-service customer/order operations
+    if (
+      req.auth.roles?.includes("customer") &&
+      requiredPermissions.some((p) => p.startsWith("customers.me") || p.startsWith("orders.me"))
+    ) {
+      next();
+      return;
+    }
+
+    const hasPermission = requiredPermissions.some((perm) => req.auth!.permissions?.includes(perm));
 
     if (!hasPermission) {
       next(new AppError(403, ErrorCodes.FORBIDDEN, "Insufficient permissions"));

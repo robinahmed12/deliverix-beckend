@@ -412,7 +412,7 @@ export class CustomersService {
     });
   }
 
-  async getMe(userId: string) {
+  async resolveCustomerForUser(userId: string) {
     const customer = await prisma.customer.findUnique({
       where: { accountId: userId },
       include: {
@@ -423,9 +423,90 @@ export class CustomersService {
       },
     });
 
-    if (!customer) {
-      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
+    if (customer) {
+      return customer;
     }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "User account not found");
+    }
+
+    const emailNorm = normalizeEmail(user.email);
+    const phoneNorm = normalizePhone(user.phone ?? undefined);
+
+    if (emailNorm) {
+      const candidate = await prisma.customer.findUnique({
+        where: { emailNormalized: emailNorm },
+        include: {
+          addresses: {
+            where: { deletedAt: null },
+            orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+          },
+        },
+      });
+
+      if (candidate && !candidate.accountId) {
+        return prisma.customer.update({
+          where: { id: candidate.id },
+          data: { accountId: userId, version: { increment: 1 } },
+          include: {
+            addresses: {
+              where: { deletedAt: null },
+              orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+            },
+          },
+        });
+      }
+    }
+
+    if (phoneNorm) {
+      const candidate = await prisma.customer.findUnique({
+        where: { phoneNormalized: phoneNorm },
+        include: {
+          addresses: {
+            where: { deletedAt: null },
+            orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+          },
+        },
+      });
+
+      if (candidate && !candidate.accountId) {
+        return prisma.customer.update({
+          where: { id: candidate.id },
+          data: { accountId: userId, version: { increment: 1 } },
+          include: {
+            addresses: {
+              where: { deletedAt: null },
+              orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+            },
+          },
+        });
+      }
+    }
+
+    return prisma.customer.create({
+      data: {
+        name: user.name || "Customer",
+        email: user.email,
+        emailNormalized: emailNorm,
+        phone: user.phone ?? null,
+        phoneNormalized: phoneNorm,
+        accountId: userId,
+        status: "active",
+      },
+      include: {
+        addresses: {
+          where: { deletedAt: null },
+        },
+      },
+    });
+  }
+
+  async getMe(userId: string) {
+    const customer = await this.resolveCustomerForUser(userId);
 
     const [activeOrderCount, totalOrderCount] = await Promise.all([
       prisma.deliveryOrder.count({
@@ -467,10 +548,7 @@ export class CustomersService {
     data: { name?: string; phone?: string | null },
     meta: { requestId?: string; ip?: string },
   ) {
-    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
-    if (!customer) {
-      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
-    }
+    const customer = await this.resolveCustomerForUser(userId);
 
     const phoneNormalized = normalizePhone(data.phone ?? undefined);
     if (phoneNormalized && phoneNormalized !== customer.phoneNormalized) {
@@ -596,10 +674,7 @@ export class CustomersService {
   }
 
   async listMyAddresses(userId: string) {
-    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
-    if (!customer) {
-      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
-    }
+    const customer = await this.resolveCustomerForUser(userId);
     return this.listAddresses(customer.id);
   }
 
@@ -608,10 +683,7 @@ export class CustomersService {
     data: Parameters<CustomersService["createAddress"]>[1],
     meta: { requestId?: string; ip?: string },
   ) {
-    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
-    if (!customer) {
-      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
-    }
+    const customer = await this.resolveCustomerForUser(userId);
     return this.createAddress(customer.id, data, userId, meta);
   }
 
@@ -621,10 +693,7 @@ export class CustomersService {
     data: Parameters<CustomersService["updateAddress"]>[2],
     meta: { requestId?: string; ip?: string },
   ) {
-    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
-    if (!customer) {
-      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
-    }
+    const customer = await this.resolveCustomerForUser(userId);
     return this.updateAddress(customer.id, addressId, data, userId, meta);
   }
 
@@ -633,10 +702,9 @@ export class CustomersService {
     addressId: string,
     meta: { requestId?: string; ip?: string },
   ) {
-    const customer = await prisma.customer.findUnique({ where: { accountId: userId } });
-    if (!customer) {
-      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
-    }
+    const customer = await this.resolveCustomerForUser(userId);
     return this.deleteAddress(customer.id, addressId, userId, meta);
   }
 }
+
+export const customersService = new CustomersService();

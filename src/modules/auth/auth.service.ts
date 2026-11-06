@@ -33,11 +33,34 @@ interface UserWithRoles extends User {
   }>;
 }
 
+const DEFAULT_CUSTOMER_PERMISSIONS = [
+  "customers.me.view",
+  "customers.me.update",
+  "customers.me.addresses",
+  "orders.me.cancel",
+  "orders.me.reschedule",
+  "orders.view",
+  "notifications.view",
+];
+
+function extractPermissions(user: UserWithRoles): string[] {
+  const perms = new Set<string>();
+  for (const ur of user.roles) {
+    for (const rp of ur.role.permissions) {
+      perms.add(rp.permission.code);
+    }
+    if (ur.role.name === "customer") {
+      for (const p of DEFAULT_CUSTOMER_PERMISSIONS) {
+        perms.add(p);
+      }
+    }
+  }
+  return Array.from(perms);
+}
+
 function toUserDto(user: UserWithRoles) {
   const roles = user.roles.map((ur) => ur.role.name);
-  const permissions = user.roles.flatMap((ur) =>
-    ur.role.permissions.map((rp) => rp.permission.code),
-  );
+  const permissions = extractPermissions(user);
   return {
     id: user.id,
     email: user.email,
@@ -71,9 +94,7 @@ async function getUserWithRoles(userId: string): Promise<UserWithRoles> {
 
 async function createTokenPair(user: UserWithRoles): Promise<TokenPairResult> {
   const roles = user.roles.map((ur) => ur.role.name);
-  const permissions = user.roles.flatMap((ur) =>
-    ur.role.permissions.map((rp) => rp.permission.code),
-  );
+  const permissions = extractPermissions(user);
 
   const accessToken = signAccessToken({
     userId: user.id,
@@ -210,9 +231,7 @@ export class AuthService {
 
     const user = await getUserWithRoles(credential.userId);
     const roles = user.roles.map((ur) => ur.role.name);
-    const permissions = user.roles.flatMap((ur) =>
-      ur.role.permissions.map((rp) => rp.permission.code),
-    );
+    const permissions = extractPermissions(user);
 
     const accessToken = signAccessToken({
       userId: user.id,
@@ -338,9 +357,7 @@ export class AuthService {
     const fullUser = await getUserWithRoles(user.id);
 
     const roles = fullUser.roles.map((ur) => ur.role.name);
-    const permissions = fullUser.roles.flatMap((ur) =>
-      ur.role.permissions.map((rp) => rp.permission.code),
-    );
+    const permissions = extractPermissions(fullUser);
     const accessToken = signAccessToken({
       userId: fullUser.id,
       email: fullUser.email,

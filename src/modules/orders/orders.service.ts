@@ -4,6 +4,7 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { ErrorCodes } from "../../shared/errors/error-codes.js";
 import { generateOrderNumber } from "./order-number.service.js";
 import { decodeCursor, encodeCursor } from "../../shared/utils/cursor.js";
+import { customersService } from "../customers/customers.service.js";
 import type { Prisma } from "../../generated/prisma/client.js";
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
@@ -236,10 +237,7 @@ export class OrdersService {
     if (isStaff) {
       return {};
     }
-    const customer = await prisma.customer.findUnique({ where: { accountId: auth.userId } });
-    if (!customer) {
-      throw new AppError(403, ErrorCodes.FORBIDDEN, "No customer account linked");
-    }
+    const customer = await customersService.resolveCustomerForUser(auth.userId);
     return { customerId: customer.id };
   }
 
@@ -300,7 +298,7 @@ export class OrdersService {
     if (!isStaff) {
       let allowed = false;
 
-      const customer = await prisma.customer.findUnique({ where: { accountId: auth.userId } });
+      const customer = await customersService.resolveCustomerForUser(auth.userId);
       if (customer && customer.id === order.customerId) {
         allowed = true;
       }
@@ -547,7 +545,7 @@ export class OrdersService {
     if (auth) {
       const isStaff = auth.roles.some((r) => ["admin", "dispatcher", "support"].includes(r));
       if (!isStaff) {
-        const customer = await prisma.customer.findUnique({ where: { accountId: auth.userId } });
+        const customer = await customersService.resolveCustomerForUser(auth.userId);
         if (!customer || customer.id !== order.customerId) {
           throw new AppError(403, ErrorCodes.FORBIDDEN, "Access denied");
         }

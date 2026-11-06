@@ -1,6 +1,7 @@
 import { prisma } from "../../shared/utils/prisma.js";
 import { AppError } from "../../shared/errors/app-error.js";
 import { ErrorCodes } from "../../shared/errors/error-codes.js";
+import { customersService } from "./customers.service.js";
 
 export interface CustomerRAGOrder {
   id: string;
@@ -69,19 +70,7 @@ export class CustomerContextService {
    * This guarantees strict customer boundary isolation (CUS-006, PRIV-005) when grounding LLM responses.
    */
   async buildCustomerContext(userId: string): Promise<CustomerRAGContext> {
-    const customer = await prisma.customer.findUnique({
-      where: { accountId: userId },
-      include: {
-        addresses: {
-          where: { deletedAt: null },
-          orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
-        },
-      },
-    });
-
-    if (!customer) {
-      throw new AppError(404, ErrorCodes.RESOURCE_NOT_FOUND, "No customer profile linked to this user account");
-    }
+    const customer = await customersService.resolveCustomerForUser(userId);
 
     const activeStatuses = [
       "Pending",
