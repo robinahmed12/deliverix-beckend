@@ -122,6 +122,37 @@ describe("SupportRAGService & Knowledge Base Unit Tests", () => {
     });
   });
 
+  describe("Plain-Text Sanitizer", () => {
+    it("strips markdown hashes, asterisks, tables, and backticks into clean structured plain text", () => {
+      const rawMarkdown = `### **1. Order Cancellation Policy**
+- **Allowed while:** \`Pending\` or \`ReadyForPickup\`
+- **Not allowed once:** \`PickedUp\`
+
+---
+
+### **Your Current Situation:**
+| Order | Status | Key Policy Implications |
+|---|---|---|
+| **ORD101** | \`Failed\` | Can reschedule before next attempt. |
+| **ORD102** | \`InTransit\` | Custody with courier. |
+
+Would you like help with **ORD101**?`;
+
+      const sanitized = (service as any).sanitizePlainTextStructure(rawMarkdown);
+
+      expect(sanitized).not.toContain("###");
+      expect(sanitized).not.toContain("**");
+      expect(sanitized).not.toContain("`");
+      expect(sanitized).not.toContain("---");
+      expect(sanitized).not.toContain("|");
+      expect(sanitized).toContain("1. Order Cancellation Policy:");
+      expect(sanitized).toContain("- Allowed while: Pending or ReadyForPickup");
+      expect(sanitized).toContain("Your Current Situation:");
+      expect(sanitized).toContain("- ORD101 — Failed — Can reschedule before next attempt.");
+      expect(sanitized).toContain("Would you like help with ORD101?");
+    });
+  });
+
   describe("FAQ Catalog", () => {
     it("filters FAQs by category and search keyword", () => {
       const trackingFaqs = service.getFaqs("tracking");

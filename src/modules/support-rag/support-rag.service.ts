@@ -79,14 +79,25 @@ export class SupportRAGService {
 3. Cancellation: Orders can only be cancelled while in 'Pending' or 'ReadyForPickup' (ORD-008). Once picked up, cancel is not allowed.
 4. Rescheduling: Customers can reschedule orders in 'Pending', 'ReadyForPickup', or 'Failed' (prior to next attempt).
 5. Delivery Attempts: Deliverix allows a maximum of 3 attempts before returning to sender (ATT-006).
-6. Be concise, polite, empathetic, and clear. Format key details with bullet points.
+
+### MANDATORY PLAIN-TEXT FORMATTING RULES:
+- Provide your response in clean, human-readable structured plain text.
+- DO NOT use markdown headers with hashes (NEVER use #, ##, or ###).
+- DO NOT use markdown bold or italic asterisks (NEVER use *, **, or ***).
+- DO NOT use markdown tables with vertical bars (|) or table divider lines.
+- DO NOT use backticks for inline code (do not write \`Pending\`).
+- Format section titles as plain capitalized text followed by a colon (e.g. "1. Order Cancellation Policy:").
+- Use clean hyphens (-) for lists and bullet items.
+- When summarizing customer orders, list each order on its own line using a clean hyphen:
+  - Order [OrderNumber]: Status is [Status]. [Key details or next steps]
+- Be concise, polite, empathetic, and clear with natural paragraph breaks.
 
 ---
-### CURRENT CUSTOMER CONTEXT:
+CUSTOMER CONTEXT:
 ${customerMarkdown}
 
 ---
-### RELEVANT DELIVERIX POLICIES:
+DELIVERIX POLICIES:
 ${policyMarkdown}`;
 
     // 5. Build conversation history
@@ -116,8 +127,10 @@ ${policyMarkdown}`;
       answer = this.synthesizeGroundedFallback(input.message, fullCustomerContext, relevantChunks);
     }
 
+    const sanitizedAnswer = this.sanitizePlainTextStructure(answer);
+
     return {
-      answer,
+      answer: sanitizedAnswer,
       retrievedPolicies: relevantChunks.map((c) => ({
         id: c.id,
         title: c.title,
@@ -173,7 +186,7 @@ ${policyMarkdown}`;
         const attemptInfo = activeOrder.latestAttempt?.failureReasonCode
           ? ` Last attempt had note: ${activeOrder.latestAttempt.failureReasonCode}.`
           : "";
-        return `Hello ${context.customer.name}! Your order **#${activeOrder.orderNumber}** is currently **${activeOrder.status}**.${attemptInfo} You can view full tracking events in your customer timeline.`;
+        return `Hello ${context.customer.name}! Your order #${activeOrder.orderNumber} is currently ${activeOrder.status}.${attemptInfo} You can view full tracking events in your customer timeline.`;
       }
       return `Hello ${context.customer.name}! You do not currently have any active orders out for delivery. You can review your past completed deliveries in your order history.`;
     }
@@ -181,22 +194,93 @@ ${policyMarkdown}`;
     if (qLower.includes("cancel")) {
       if (activeOrder) {
         if (activeOrder.status === "Pending" || activeOrder.status === "ReadyForPickup") {
-          return `Your order **#${activeOrder.orderNumber}** is currently in **${activeOrder.status}** status, so you are eligible to cancel it directly through the app before driver pickup.`;
+          return `Your order #${activeOrder.orderNumber} is currently in ${activeOrder.status} status, so you are eligible to cancel it directly through the app before driver pickup.`;
         }
-        return `Order **#${activeOrder.orderNumber}** is currently in **${activeOrder.status}** status. Under Deliverix policy, orders cannot be cancelled once a driver has already picked up the package.`;
+        return `Order #${activeOrder.orderNumber} is currently in ${activeOrder.status} status. Under Deliverix policy, orders cannot be cancelled once a driver has already picked up the package.`;
       }
-      return `Orders can be cancelled free of charge while in 'Pending' or 'ReadyForPickup' status before courier pickup.`;
+      return `Orders can be cancelled free of charge while in Pending or ReadyForPickup status before courier pickup.`;
     }
 
     if (qLower.includes("reschedule") || qLower.includes("change time") || qLower.includes("address")) {
-      return `Under Deliverix policy, delivery rescheduling is available for orders in 'Pending', 'ReadyForPickup', or after a 'Failed' attempt. Material address modifications cannot be made once the package is in transit.`;
+      return `Under Deliverix policy, delivery rescheduling is available for orders in Pending, ReadyForPickup, or after a Failed attempt. Material address modifications cannot be made once the package is in transit.`;
     }
 
     if (policies.length > 0 && policies[0]) {
-      return `According to Deliverix policy on **${policies[0].title}**:\n\n${policies[0].content}`;
+      return `According to Deliverix policy on ${policies[0].title}:\n\n${policies[0].content}`;
     }
 
     return `Hello ${context.customer.name}, I am your Deliverix Support Concierge. How can I assist you with your orders or delivery today?`;
+  }
+
+  /**
+   * Post-processes model output to guarantee clean, structured plain text:
+   * - Strips markdown header symbols (#, ##, ###) while preserving titles
+   * - Strips bold/italic asterisks (*, **, ***)
+   * - Strips code backticks (`)
+   * - Converts markdown table lines (| col1 | col2 |) into clean bullet points
+   * - Normalizes list bullet characters to clean hyphens (-)
+   */
+  private sanitizePlainTextStructure(raw: string): string {
+    if (!raw) return "";
+
+    const lines = raw.split("\n");
+    const cleanedLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i]!.trim();
+
+      // Skip markdown divider lines (e.g. '---', '===')
+      if (/^[-=_]{3,}$/.test(line)) {
+        continue;
+      }
+
+      // Skip markdown table delimiter rows like '|---|---|---|'
+      if (/^\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?$/.test(line)) {
+        continue;
+      }
+
+      // Convert table content rows (| col1 | col2 | col3 |) into clean bullet items
+      if (line.startsWith("|") && line.endsWith("|")) {
+        const cells = line
+          .slice(1, -1)
+          .split("|")
+          .map((c) => c.trim().replace(/\*{1,3}/g, "").replace(/`+/g, ""))
+          .filter(Boolean);
+
+        if (cells.length > 0) {
+          const firstCell = cells[0]!;
+          if (/^(order|order id|status|order number)$/i.test(firstCell)) {
+            continue;
+          }
+          if (cells.length >= 2) {
+            line = `- ${cells.join(" — ")}`;
+          } else {
+            line = `- ${cells[0]}`;
+          }
+        }
+      }
+
+      // Replace markdown headers (### Title or ## Title) with clean Title:
+      line = line.replace(/^#{1,6}\s*(.+)$/, "$1:");
+
+      // Strip asterisks (* or ** or ***)
+      line = line.replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1");
+      line = line.replace(/\*{1,3}/g, "");
+
+      // Strip backticks (`code`)
+      line = line.replace(/`([^`]+)`/g, "$1");
+      line = line.replace(/`+/g, "");
+
+      // Normalize bullet characters: * or + at start of line -> clean hyphen '-'
+      line = line.replace(/^[*+]\s+/, "- ");
+
+      cleanedLines.push(line);
+    }
+
+    return cleanedLines
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   }
 
   /**
