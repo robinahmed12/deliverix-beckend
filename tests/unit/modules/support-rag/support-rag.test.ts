@@ -1,9 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { SupportRAGService } from "../../../../src/modules/support-rag/support-rag.service.js";
-import { retrieveRelevantKnowledge, DELIVERIX_KNOWLEDGE_BASE } from "../../../../src/modules/support-rag/knowledge-base.js";
+import { retrieveRelevantKnowledge } from "../../../../src/modules/support-rag/knowledge-base.js";
 import { customerContextService } from "../../../../src/modules/customers/customer-context.service.js";
 import { pgVectorStore } from "../../../../src/modules/support-rag/vector-store.js";
-import { ChatOpenAI } from "@langchain/openai";
 
 describe("SupportRAGService & Knowledge Base Unit Tests", () => {
   let service: SupportRAGService;

@@ -14,7 +14,7 @@ describe("PgVectorStore Unit Tests", () => {
     const mockEmbeddings = {
       embedQuery: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
     };
-    (store as any).embeddings = mockEmbeddings;
+    (store as unknown as { embeddings: unknown }).embeddings = mockEmbeddings;
 
     vi.spyOn(prisma, "$queryRawUnsafe").mockResolvedValue([
       {
@@ -39,7 +39,7 @@ describe("PgVectorStore Unit Tests", () => {
     const mockEmbeddings = {
       embedQuery: vi.fn().mockRejectedValue(new Error("Network timeout")),
     };
-    (store as any).embeddings = mockEmbeddings;
+    (store as unknown as { embeddings: unknown }).embeddings = mockEmbeddings;
 
     const results = await store.searchSimilar("where is my order tracking?", 2);
 

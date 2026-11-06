@@ -3,7 +3,7 @@ import { SystemMessage, HumanMessage, AIMessage, BaseMessage } from "@langchain/
 import { env } from "../../config/env.js";
 import { customerContextService } from "../customers/customer-context.service.js";
 import { DELIVERIX_KNOWLEDGE_BASE, type KnowledgeChunk } from "./knowledge-base.js";
-import { pgVectorStore, type VectorKnowledgeChunk } from "./vector-store.js";
+import { pgVectorStore } from "./vector-store.js";
 import type { SupportChatInput } from "./support-rag.schemas.js";
 
 export interface SupportChatResponse {
@@ -107,7 +107,7 @@ ${policyMarkdown}`;
       try {
         const response = await this.llm.invoke(messages);
         answer = typeof response.content === "string" ? response.content : JSON.stringify(response.content);
-      } catch (err) {
+      } catch {
         // Fallback to grounded local synthesis if API fails or rate limited
         answer = this.synthesizeGroundedFallback(input.message, fullCustomerContext, relevantChunks);
       }
