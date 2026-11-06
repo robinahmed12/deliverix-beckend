@@ -2,12 +2,13 @@ import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage, AIMessage, BaseMessage } from "@langchain/core/messages";
 import { env } from "../../config/env.js";
 import { customerContextService } from "../customers/customer-context.service.js";
-import { retrieveRelevantKnowledge, DELIVERIX_KNOWLEDGE_BASE, type KnowledgeChunk } from "./knowledge-base.js";
+import { DELIVERIX_KNOWLEDGE_BASE, type KnowledgeChunk } from "./knowledge-base.js";
+import { pgVectorStore, type VectorKnowledgeChunk } from "./vector-store.js";
 import type { SupportChatInput } from "./support-rag.schemas.js";
 
 export interface SupportChatResponse {
   answer: string;
-  retrievedPolicies: Array<{ id: string; title: string; category: string }>;
+  retrievedPolicies: Array<{ id: string; title: string; category: string; similarity?: number | undefined }>;
   customerContextSummary: {
     customerName: string;
     activeOrdersCount: number;
@@ -59,8 +60,9 @@ export class SupportRAGService {
 
     const customerMarkdown = customerContextService.formatContextForPrompt(fullCustomerContext);
 
-    // 2. Semantic Knowledge Base Retrieval
-    const relevantChunks = retrieveRelevantKnowledge(input.message, 3);
+    // 2. Semantic Knowledge Base Retrieval (pgvector dense cosine similarity search)
+    await pgVectorStore.ensureKnowledgeBaseVectorized();
+    const relevantChunks = await pgVectorStore.searchSimilar(input.message, 3);
     const policyMarkdown = relevantChunks
       .map((c) => `### Policy: ${c.title}\n${c.content}`)
       .join("\n\n");
@@ -120,6 +122,7 @@ ${policyMarkdown}`;
         id: c.id,
         title: c.title,
         category: c.category,
+        ...(c.similarity !== undefined ? { similarity: c.similarity } : {}),
       })),
       customerContextSummary: {
         customerName: fullCustomerContext.customer.name,

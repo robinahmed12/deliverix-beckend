@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { initializeScheduler, stopScheduler } from "./jobs/scheduler.js";
+import { pgVectorStore } from "./modules/support-rag/vector-store.js";
 import { logger } from "./shared/utils/logger.js";
 import { prisma } from "./shared/utils/prisma.js";
 
@@ -11,6 +12,9 @@ const server: Server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, "deliverix API listening");
   initializeScheduler().catch((err: unknown) =>
     logger.error({ err }, "scheduler initialization failed; background jobs disabled"),
+  );
+  pgVectorStore.ensureKnowledgeBaseVectorized().catch((err: unknown) =>
+    logger.error({ err }, "pgvector knowledge base initialization failed"),
   );
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { SupportRAGService } from "../../../../src/modules/support-rag/support-rag.service.js";
 import { retrieveRelevantKnowledge, DELIVERIX_KNOWLEDGE_BASE } from "../../../../src/modules/support-rag/knowledge-base.js";
 import { customerContextService } from "../../../../src/modules/customers/customer-context.service.js";
+import { pgVectorStore } from "../../../../src/modules/support-rag/vector-store.js";
 import { ChatOpenAI } from "@langchain/openai";
 
 describe("SupportRAGService & Knowledge Base Unit Tests", () => {
@@ -10,6 +11,10 @@ describe("SupportRAGService & Knowledge Base Unit Tests", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     service = new SupportRAGService();
+    vi.spyOn(pgVectorStore, "ensureKnowledgeBaseVectorized").mockResolvedValue(undefined);
+    vi.spyOn(pgVectorStore, "searchSimilar").mockImplementation(async (query, topK) => {
+      return retrieveRelevantKnowledge(query, topK);
+    });
   });
 
   describe("Knowledge Base Retrieval", () => {
@@ -72,6 +77,7 @@ describe("SupportRAGService & Knowledge Base Unit Tests", () => {
     };
 
     it("synthesizes grounded response for order tracking inquiry", async () => {
+      (service as any).llm = null;
       vi.spyOn(customerContextService, "buildCustomerContext").mockResolvedValue(mockContext);
 
       const response = await service.processCustomerQuery("user-sam", {
@@ -85,6 +91,7 @@ describe("SupportRAGService & Knowledge Base Unit Tests", () => {
     });
 
     it("enforces cancellation policy guardrails when order is in transit", async () => {
+      (service as any).llm = null;
       vi.spyOn(customerContextService, "buildCustomerContext").mockResolvedValue(mockContext);
 
       const response = await service.processCustomerQuery("user-sam", {
